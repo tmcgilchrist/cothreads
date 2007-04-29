@@ -1,0 +1,107 @@
+=============================================================================
+
+                     STM library for OCaml                               
+
+
+            (C) 2007 by Zheng Li (li@pps.jussieu.fr)                   
+
+=============================================================================
+
+
+
+DESCRIPTION
+===========
+
+This is a user-space implementation of STM (Software Transactional Memory)
+library for OCaml. It's mainly inspired by the STM library of Haskell (you may
+want to read some of the references in the REFERENCE section), with some
+exceptions due to the differences nature of languages and the different
+strategies of implementation.
+
+  - This library is a user level implementation, whereas the Haskell version is
+    based on primitives built into the runtime. 
+
+  - This library is purely an add-on to the already existed concurrent library
+    of standard OCaml: threads, processes (TODO) and network programs
+    (TODO). I.e. you can still program your concurrent applications with all
+    facilities already exist in OCaml (such as Thread.create or Unix.fork to
+    launch new thread/process respectively), but with the functions from this
+    library you may transactionally read/write shared data instead of using
+    locks or messages (and you may mix them if you really want).
+
+  - There are subtle differences on the signatures and semantics of some
+    specific functions between this library and the Haskell version. They are
+    documented in the library manual.
+
+Currently only the threads back-end is provided as a proof of concept. Other
+backends, which share the exact interface, will come out some time later. With
+the help of iThread module (a minimal common interface for launching and
+manipulating threads/process/network programs with uniformed functions, having
+a naive implemented and not publicly available at this moment), you will be
+able to write a single program (.ml) and compile once (.cmo), but link with
+different backends to get different excutables based on different execution
+model (threaded, multi-process and networked).
+
+
+
+REFERENCE
+=========
+
+The following literature is helpful on understanding STM. The first one is
+especially recommended from a programmer's (library user) point of view.
+
+ - Beautiful concurrency: a practical illustration of STM
+  <http://research.microsoft.com/~simonpj/papers/stm/#beautiful>
+    
+ - STM paper: rigorous semantics definition of STM in Haskell
+  <http://research.microsoft.com/~simonpj/papers/stm/#composble> 
+
+ - Haskell wiki page on STM
+   <http://www.haskell.org/haskellwiki/Software_transactional_memory> 
+
+
+
+CONTENTS
+========
+
+  Changes               what's new with each release
+  INSTALL               instructions for installation
+  LICENSE               license and copyright notice
+  Makefile              main Makefile
+  Makefile.template     common configuration shared by all makefiles
+  README                this file
+  TODO                  the next step
+  VERSION               version number
+  doc/                  working directory to generate documentation
+  example/              some examples using STM
+  src/                  source directory of common interface file
+  src/threads/          source directory of threads back-end
+  src/vmthreads/        source directory of vmthreads back-end 
+  src/process/          source directory of process back-end (empty)
+  src/network/          source directory of network program back-end (empty)
+
+
+
+COPYRIGHT
+=========
+
+See file ./LICENCE
+
+
+
+INSTALLATION
+============
+
+See file ./INSTALL for installation instructions 
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,55 @@
+# Installation setting: Usually the only parameter needs customization
+INSTALLLIBDIR = $(OCAMLSTDLIBPATH)/stm
+
+
+# Layout of urrent project
+SOURCEDIR = src
+DOCDIR = doc
+EXAMPLEDIR = example
+
+# OCaml related setting
+
+OCAMLC = ocamlc
+OCAMLOPT = ocamlopt
+OCAMLDEP = ocamldep
+OCAMLDOC = ocamldoc
+OCAMLSTDLIBPATH = $(shell $(OCAMLC) -where)
+
+
+INCLUDES=                 # all relevant -I options here
+OCAMLCFLAGS=$(INCLUDES)    # add other options for ocamlc here	
+OCAMLOPTFLAGS=$(INCLUDES) # add other options for ocamlopt here
+
+
+.SUFFIXES: .cmo .cmi .cmx .ml .mli
+
+.ml.cmo:
+	$(OCAMLC) -c $(OCAMLCFLAGS) $<
+.mli.cmi:
+	$(OCAMLC) -c $(OCAMLCFLAGS) $<
+.ml.cmx:
+	$(OCAMLOPT) -c $(OCAMLOPTFLAGS) $<
+
+
+.PHONY: depend all install doc uninstall clean ocamlclean
+
+depend .depend: 
+	$(OCAMLDEP) $(INCLUDES) *.ml *.mli > .depend
+
+ocamlclean:
+	rm -f *.cmi *.cmo *.cmx *.cma *.cmxa *.a *.o *~
+
+
+## Common Routines
+MKDIR = mkdir -p
+RM = rm -rf
+CP = cp -pfr
+MV = mv -f
+LN = ln -sf
+TOUCH = touch
+CHMOD = chmod -R
+CHGRP = chgrp -R
+CHOWN = chown -R
+TAR = tar
+TARC = $(TAR) czvf
+TARX = $(TAR) xzvf
