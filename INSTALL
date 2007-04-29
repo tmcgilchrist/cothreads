@@ -1,0 +1,81 @@
+PREREQUISITES
+=============
+
+  - GNU Make
+  - Linux
+  - OCaml
+
+The distribution has been tested with GNU Make 3.08, OCaml 3.09.2 on
+Debian/Linux etch. It may work, or adapted to work, in other environment though
+not being test yet. See QUICK INSTALLATION section below for instruction of the
+simplest compile-and-use style installation without messing up with Makefile.
+
+
+INSTALLATION
+============
+
+To build and install the library, first customize some installation parameters in
+Makefile.template. Usually you only have to change $(INSTALLLIBDIR) to decide
+the directory to install, you may also change other parameters if you want. Then,
+
+    make all          # compile the library source
+    make install      # install
+
+The result directory structure should like
+
+    $(INSTALLLIBDIR)
+                 |-- stm.cmi    # common interface
+                 |-- threads/   # threads backend
+                 |       |-- stm.cmi  # symbolic link to common interface
+                 |       |-- stm.cmo  # threads implementation
+                 |       `-- stm.cmx  # threads implementation
+                 |-- vmthreads/ # vmthreads backend
+                 |       |-- stm.cmi  # symbolic link to common interface
+                 |       `-- stm.cmo  # vmthreads implementation
+                 |-- process/   # process backend (currently ABSENT)
+                 |       |-- stm.cmi  # symbolic link to common interface 
+                 |       |-- stm.cmo  # process implementation
+                 |       `-- stm.cmx  # process implementation
+                 `-- network/   # networked program backend (currently ABSENT)
+                         |-- stm.cmi  # symbolic link to common interface
+                         |-- stm.cmo  # networked program implementation
+                         `-- stm.cmx  # networked program implementation
+                     
+
+The complex structure is due to fact that our final object is to allow programs
+to be compiled against the common interface and hence being able to switch
+their execution back-end simply through linking command.
+
+Other make options include
+
+    make doc          # generate html/man documentation in the doc directory
+    make clean        # clean up
+    make uninstall    # uninstall
+
+
+USAGE
+=====
+
+As usual, you compile your program by telling the compiler where the library
+interface is located: e.g.
+
+   ocamlc -c -I +threads -I +stm/threads prog.ml
+
+and link the result with stm.cmo and other prerequisite modules: e.g.
+
+   ocamlc -o prog.exe -I +threads -I +stm/threads unix.cma threads.cma stm.cmo prog.cmo
+
+You may want to compile examples in the ./example directory as a test.
+
+
+
+QUICK INSTALLATION
+==================
+
+If you don't want to mess up with the backend switching mechanics (anyway we
+only provide the threads backend at this moment), you can just plainly compile
+the source as you do with any pure OCaml library: simply copy src/stm.mli and
+src/threads/stm.ml to a temp directory and compile them there, then move the
+resulted .cmo .cmx .cmi to the  directory of installation. In this way, you'll
+have the threads based implementation as the unique backend. Documentation can
+be generated manually from stm.mli using ocamldoc.
