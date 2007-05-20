@@ -15,7 +15,7 @@ DESCRIPTION
 This is a user-space implementation of STM (Software Transactional Memory)
 library for OCaml. It's mainly inspired by the STM library of Haskell (you may
 want to read some of the references in the REFERENCE section), with some
-exceptions due to the differences nature of languages and the different
+exceptions due to the different natures of languages and the different
 strategies of implementation.
 
   - This library is a user level implementation, whereas the Haskell version is

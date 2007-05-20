@@ -25,16 +25,17 @@
 
 
 type 'a stm
-  (** The type of a transaction, when executed will produce result of type
+  (** The type of a transaction, when executed will produce a result of type
   ['a]. *) 
 
 val return: 'a -> 'a stm
-  (** Primitive to wrap a plain of type ['a] value to a ['a stm] *)
+  (** Primitive to wrap a plain of type ['a] value to a ['a stm], which when
+      being executed, will produces the orignal value. *)
 
 val bind: 'a stm -> ('a -> 'b stm) -> 'b stm
-  (** [bind t f] is a transaction, when executed, first behaviors as
-      transaction [t], then feed its return value to [f] to get the
-      consecutive transaction and execute it.
+  (** [bind t f] is a transaction, when executed, first behavior as
+      transaction [t], then feed the reture value to [f] to get the
+      consecutive transaction to execute next.
   *)
 
 val ( >>= ): 'a stm -> ('a -> 'b stm) -> 'b stm
@@ -100,9 +101,9 @@ val catch: 'a stm -> (exn -> 'a stm) -> 'a stm
   *)
 
 val atom_once: 'a stm -> 'a option 
-  (** [atom_once] execute a transaction and result in [Some v] is the
-      transaction success and [None] is the transaction fail (due to
-      conflicting in committing or abort. One difference between OCaml and
+  (** [atom_once] execute a transaction and result in [Some v] if the
+      transaction success and [None] if the transaction fail (due to
+      conflicting in committing or abort). One difference between OCaml and
       Haskell is that OCaml is not pure and can hide side-effect anywhere while
       Haskell is pure and can seperate values with/without side-effect by
       types. On STM, any transaction may fail and relaunch for some times
@@ -116,25 +117,29 @@ val atom_once: 'a stm -> 'a option
       {i may} fail" and let the programmer decide what to do. This kind of
       things already exist in OCaml such as exception. E.g. [try incr i;
       danger_v1 with _ -> decr i; v2], it's the programmers' responsibility to
-      revert [i] if that's what they mean. On the other hand, the good thing is
-      that now the programmers have more flexibility in controlling the
+      revert [i] or choose not to do the side-effect modification inside a
+      dangerous envrionment, if that's what they mean. On the other hand, the good 
+      thing is that now the programmers have more flexibility in controlling the
       execution of transactions, e.g. they may choose in purpose not to
-      repeatedly execute the transaction after the committing fails [n] times.
+      repeatedly execute the transaction after the committing fails [x] times.
   *)
 
 val atom: 'a stm -> 'a
-  (** This is an analog of [automatically] in Haskell, which repeatedly execute
+  (** This is an analog of [atomically] in Haskell, which repeatedly execute
       a transaction until the committing succeed. As being said in [atom_once],
-      the control is given to the programmer, they can simply define [atom] by
-      themselves [let rec atom t = match atom_once t with Some v -> v | _ -> atom
-      t]
+      the control is given to the programmer, the [atom] can defined by themselves
+      as [let rec atom t = match atom_once t with Some v -> v | _ -> atom t]. 
+      Providing it is just for convenience. In the same way, you can define various
+      helper functions such as [check].
 
-      As already warned, usually you should avoid side-effect unless that's
-      what you want: as an example, you may want to add a harmless print
+      As already warned (see [atom_once], transactions may fail, relauching 
+      transactions also means relaunching side-effects inside a transaction if any.
+      So usually you should avoid side-effect, unless it's something you don't care
+      or even something you want: as an example, you may want to add a harmless print
       routine inside the transaction to be able to debug that how may times the
       transaction fails before its success :)
 
-      We allow nested [atom_once] or [atom].
+      Unlike in haskell, we allow nested [atom_once] or [atom].
   *)
 
 
@@ -180,5 +185,5 @@ val write_tvar: 'a tvar -> 'a -> unit stm
       way exception write_tvar: such as producing the tvar from a mutable value
       or reference and secretly changing it in traditional way. First, it
       breaks the transactional semantics; second, in all possibility you won't
-      be able to do that, as the value of TVA is isolated.
+      be able to do that, as the value of tvar is isolated.
   *)

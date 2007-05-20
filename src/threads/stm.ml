@@ -101,13 +101,8 @@ let repr_of_val v = Obj.repr v, Marshal.to_string v [Marshal.Closures]
 and val_of_repr (_,s) = Marshal.from_string s 0
 
 (* Phantom type *)
-type 'a tvar = tid
+type 'a tvar = unit -> tid
 
-(* To break inference to a tid, which is useful for the following Weaktid
-   module: when you want to restore tid to a table but don't want it to be
-   count as a reference, you just make a copy.
-*)
-let copy_tid tid = (fst tid, snd tid)
 
 (* Tidtbl is used to define the environment (tvar * value/version bindings)
    and log (tvar * cur_value/rw_state etc. bindings). We must snapshot the
@@ -165,27 +160,11 @@ and thr_state =
 (* thr = thread_id -> thread_info bindings *)
 type thr = thr_info Thrtbl.t
 
-(* Global env hold all tvar's value. Even the corresponding tid is already
-   GCed and no longer reachable, items in env never decrease. The same problem
-   has been discussed in Caml's list before and Weak module is a standard
-   solution. We'll GC all unnecessary tvar_repr when creating new tvars.
-
-   http://caml.inria.fr/pub/ml-archives/caml-list/2006/05/984487d338480d1ac768c8a5a1a564d9.en.html
-   http://caml.inria.fr/pub/ml-archives/caml-list/2005/12/d487a8d6c8c19a06918faa946ce5fce3.en.html
-*)
-module Weaktid = 
-  Weak.Make (struct type t = tid let equal = (=) let hash = Hashtbl.hash end)
-
-
-
-
 
 (* Global variables, should be always protected *)
 let global_env = ref Tidtbl.empty
-let global_weaktid = Weaktid.create 200
+  (* let global_weaktid = Weaktid.create 200 *)
 let global_thr = ref Thrtbl.empty
-
-
 
 
 (* Some helper functions *)
@@ -216,11 +195,12 @@ let new_thr () =
   global_thr := Thrtbl.add thr_id thr_info !global_thr;
   thr_info
 
-let clean_weaktid weak_tbl env = Tidtbl.fold 
-  (fun tid _ old_env -> 
-     if Weaktid.mem weak_tbl tid then old_env 
-     else Tidtbl.remove tid old_env
-  ) env env
+
+let global_rem = ref []
+
+let remove_unreachable tid = 
+  Printf.printf "%d\n" (Tidtbl.fold (fun _ _ b -> succ b) !global_env 0);
+  global_rem := tid :: !global_rem
 
 (* valid_write take a log and env, produce log_item list option:  None means
    there are differences between the version on which the log is based and the
@@ -259,7 +239,6 @@ let restore_state st st_bak =
 
 
 
-
 (* Transaction semantics *)
 
 type 'a stm = thr_state -> 'a
@@ -287,6 +266,8 @@ let tvar v =
     with Not_found -> (writer new_thr ()).state in
   thr_state.tid_count <- succ thr_state.tid_count;
   let new_tid = (cur_thr_id (), thr_state.tid_count) in
+  let _ = Gc.finalise (remove_unreachable) new_tid in  
+  let new_tvar = fun () -> new_tid in
   let new_repr =
     { version = 0;
       value = repr_of_val v;
@@ -294,46 +275,44 @@ let tvar v =
   thr_state.env <- Tidtbl.add new_tid new_repr thr_state.env;
   writer 
     (fun () ->
-       global_env := clean_weaktid global_weaktid !global_env;
-       global_env := Tidtbl.add (copy_tid new_tid) new_repr !global_env;
-       Weaktid.add global_weaktid new_tid;
+       global_env := Tidtbl.add new_tid new_repr !global_env
     ) ();
-  new_tid
+  new_tvar
 
 let new_tvar v = fun state ->
   state.tid_count <- succ state.tid_count;
   let new_tid = (cur_thr_id (), state.tid_count) in
+  let _ = Gc.finalise (remove_unreachable) new_tid in
+  let new_tvar = fun () -> new_tid in
   let new_log_item =
     { pre_version = None;
       new_value = Some (repr_of_val v)
     } in
   state.log <- Tidtbl.add new_tid new_log_item state.log;
-  new_tid
+  new_tvar
 
 let read_tvar tv = fun state -> 
   try 
     let val_repr = 
-      match (Tidtbl.find tv state.log).new_value with
-      | None -> (Tidtbl.find tv state.env).value
+      match (Tidtbl.find (tv ()) state.log).new_value with
+      | None -> (Tidtbl.find (tv ()) state.env).value
       | Some v -> v in
     val_of_repr val_repr
   with Not_found -> 
-    let tv_repr = Tidtbl.find tv state.env in
+    let tv_repr = Tidtbl.find (tv ()) state.env in
     let new_item = {pre_version = Some tv_repr.version; new_value = None} in
-    state.log <- Tidtbl.add tv new_item state.log;
+    state.log <- Tidtbl.add (tv ()) new_item state.log;
     val_of_repr tv_repr.value
 
 let write_tvar tv v = fun state ->
   let log_item = 
     try 
-      {(Tidtbl.find tv state.log) 
-       with new_value = Some (repr_of_val v)
-      }
+      { (Tidtbl.find (tv ()) state.log) with new_value = Some (repr_of_val v) }
     with Not_found -> 
-      {pre_version = None; 
-       new_value = Some (repr_of_val v)
+      { pre_version = None; 
+        new_value = Some (repr_of_val v)
       } in
-  state.log <- Tidtbl.add tv log_item state.log
+  state.log <- Tidtbl.add (tv ()) log_item state.log
 
 (* We use synchronized event here in order to be able to leave critical section
    by beginning a continuous waiting. Asynchronized event (Event.poll) won't be
@@ -357,6 +336,9 @@ let wait state  =
 
 let commit = writer 
   (fun log -> 
+     global_env := List.fold_left (fun e x -> if Tidtbl.mem x e then
+                                     Tidtbl.remove x e else e) !global_env !global_rem;
+     global_rem := [];
      let env = !global_env in
      let thr = !global_thr in
      match valid_write log env with
@@ -367,11 +349,8 @@ let commit = writer
            (fun (old_env,old_thr) (tid, value) ->
               let version =
                 try succ (Tidtbl.find tid old_env).version
-                with Not_found -> 
-                  global_env := clean_weaktid global_weaktid !global_env;
-                  Weaktid.add global_weaktid tid;
-                  0 in
-              Tidtbl.add (copy_tid tid) {version = version; value = value} old_env, 
+                with Not_found -> 0 in
+              Tidtbl.add tid {version = version; value = value} old_env, 
               Thrtbl.fold
                 (fun id item thr -> 
                    if List.mem tid item.wait_tid then
@@ -448,6 +427,3 @@ let rec atom_once t =
     | _, _ -> raise e
 
 let rec atom t = match atom_once t with None -> atom t | Some v -> v
-
-(*  LocalWords:  OCaml tvar Mutex ok
- *)
