@@ -1,0 +1,208 @@
+\documentclass{article}
+\usepackage{palatino}
+\usepackage{url}
+
+\title{STMlib: Multi-backend STM library for OCaml}
+\author{Zheng Li}
+
+\begin{document}
+\maketitle
+
+\section{Info}
+
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Name:} & Zheng Li\\
+\textbf{Email:} & \url{li@pps.jussieu.fr}\\
+\textbf{Homepage:} & \url{http://www.pps.jussieu.fr/~li}\\
+\textbf{Institue:} & Universit\'e Paris Diderot -- Paris 7\\
+\textbf{Degree:} & Ph.D. candiate\\
+\textbf{Project:} & STMlib: Multi-backend STM library for OCaml\\
+\textbf{Mentor:} & Yoriyuki Yamagata\\
+\end{tabular}
+\end{center}
+
+\section{Background}
+
+The free lunch is over \cite{FLO-Sutter-05}, the age of concurrency comes. No
+matter people like it or not, concurrent programming becomes necessary even for
+desktop application developers. However, for shared-memory multithread
+programming, an unpleasant fact is that the traditional lock-based scheme
+doesn't play quite well: it's usually complicated, difficult to get right and
+hardly composable or scalable. 
+
+Meanwile, the concept of \textit{transactional} processing which previously
+existed in the territory of database,  now becomes more and more popular in
+various other fields such as OS and language, due to the requirement of easy
+concurrency.
+Especially,  Software Transactional Memory (STM) has been proposed
+\cite{STM-ShavitTouitou-95} for several prominent advantages: freedom from
+deadlock and priority inversion,
+automatic roll-back on exceptions or timeouts, and freedom from tension between
+lock granularity and concurrency. In research field of programming language,
+Simon Peyton Jones et al. proposed \cite{CMT-HMPJH-05}
+the \emph{Composable Memeory Trasactions}, further extended the previous STM
+concept with extra
+abstraction, modularity and compositionality. They also provided an
+implementation in the context of a high-level declarative programming
+language Haskell, to show the simplicity and flexibility of this
+programming model. Since then, the concept of STM became widely accepted
+and recognized as an elegant and promising model for multithread
+programming. For now, it has been implemented for various languages e.g. C,
+C++, C\#, Java,Python, Common Lisp etc.
+
+
+\section{Motivation and Task}
+
+OCaml \cite{OCaml} is one of the most popular functional programming languages,
+widely used in Europe, Japan, US and many other places for various purposes
+ranging from education, research to industry. In its standard distribution,
+there are both native and vm-level thread implementations, providing
+traditional abstraction of locks and conditions, as well as higher-level
+abstractions such as events. 
+
+Considering the absence of a handy STM library for OCaml, we propose this
+project whose prime goal is adding STM support for OCaml. Some important
+characters include, but not restricted to
+
+\begin{itemize}
+  \item It will be a user-space implementation that does not require any
+    modification of the OCaml runtime system and compilers.
+  \item It will be provided as a light-weight and portable library that does
+    not rely on any third-party libraries, hence can be easily deployed on
+    any standard OCaml distribution on various platforms.
+  \item The most important character will be its multi-backends, i.e. a set of
+    back-ends for different parallel programming model, namely
+    thread\footnote{Check next section for progress already made.}, vmthread,
+    process, and network, sharing a common interface (API) and a compatible
+    semantics.
+\end{itemize}
+
+
+\section{Benefits}
+
+The project has the following benefits:
+
+\begin{itemize}
+
+\item OCaml is a free software (cf. Debian's categorization \cite{Debian}). It
+  has been widely used in Europe, Japan and U.S. for various purpose. Since
+  it's a compiler, it's also a source of many other great free software
+  projects \cite{OCamlProjects}, such as MLdonkey \cite{MLdonkey}, Unison
+  \cite{Unison} etc.
+\item OCaml represents some future directions of language development, hence it
+  has been a great resource inspiring, or directly leading to the birth of, many
+  other great languages most of which are provided as free
+  compilers/interpreters, e.g. MTASC \cite{MTASC}, HaXe \cite{HaXe}, Felix
+  \cite{Felix} etc. 
+\item The presence of STMlib will greatly ease the shared-memory concurrent
+  programming in OCaml, hence will benefit all OCaml programmers and a large
+  number of OCaml related projects.
+\item Some topics in this proposal still belong to research area --- an area
+  most programming languages concern a lot nowadays, as the multi-core
+  becomes mainstream. Though STMlib is a OCaml library, it's technical
+  and theoretical achievements, if any, can be shared and implemented in any
+  other programming language, hence benefit the whole free software community.
+\end{itemize}
+
+
+
+\section{Design and Roadmap}
+
+We have just implemented a thread (vmthread) back-end prototype \cite{STMlib}
+as a proof of concept. It has almost identical interface and semantics as the
+built-in Haskell implementation, sharing the same advantages, together with
+several improvements:
+
+\begin{itemize}
+  \item User-space implementation instead of runtime modification
+  \item Support of toplevel declaration of transactional variables
+  \item Support of nested atomic transactions
+  \item User controllable transaction logic
+  \item Additional primitives
+\end{itemize}
+
+The next step is to provide additional back-ends for the STMlib, in particular
+a process back-end and a network back-end. Compared with the typical thread
+back-end, the additional back-ends will provide the following advantages:
+
+
+\begin{description}
+
+\item[Performance] It's well known that threads in OCaml won't speedup your
+  programs (except for IO duplex) due to the existence of master lock.  The
+  current thread back-end provides better paradigms and facilities to ease
+  the concurrent programming, but just as any other thread-based libraries for
+  OCaml, it won't really improve your programs' performance. Whereas, the
+  back-ends based on intercommunicated processes and network programs will
+  certainly be able to fulfill this purpose.
+\item[Scalability] A thread back-end always suffers from the hard limitation
+  of CPU numbers, memory sizes etc. of a single multiprocessor
+  machine. However, a process back-end or a network back-end won't have such
+  limitation. In many cases, better scalability
+  also means better performance, simply by increasing the number of machines.
+\item[Reusability] The different back-ends share a common interface, i.e. with
+  minor (or even none, with the help of auxiliary library) modifications, a
+  threaded STM program can be easily adapted to its process (network) version,
+  vice versa. So that a program can be adapted to different running environments
+  to fit different needs with negligible cost. 
+\end{description}
+
+On the other hand, there also exist some challenges for this approach:
+
+\begin{itemize}
+\item Process or network based concurrent programming are not memory-sharing
+  by default, so some kind of sharing protocol and sharing mechanics have to be
+  employed here.
+\item For a distributed memory-sharing model, distributed garbage collection is
+  also obliged. Some previous work \cite{DCaml-WAM-99} from Japan, on distributed
+  shared-memory programming with OCaml, requires modifications to the underlying
+  runtime system, which is quite contradictory to our intention for a portable
+  lightweight user-space library. 
+\end{itemize}
+
+Even though, we are quite confidential to find ways to handle these
+difficulties and finally get all the predefined features we want.
+
+
+
+\section{Deliverables}
+
+The final deliverables should include
+
+\begin{itemize}
+
+  \item A STM library with at least thread (vmthread), process and network back-ends
+  \item A set of classical examples of shared memory concurrent programming
+    implemented with the library
+  \item Public accessible website with documentation, manual and repository
+  \item Benchmarks and performance analysis (optional)
+  \item Paper draft for submission to some international workshop (optional)
+
+\end{itemize}
+
+\section{Schedule}
+
+\begin{itemize}
+
+  \item Design from now
+  \item Implementation begin from begin of June or earlier
+  \item Main implementation due around mid-term examination
+  \item Continue to improve, complete examples and documents
+  \item Finish before 20 August
+
+\end{itemize}
+
+\bibliographystyle{plain}
+\bibliography{soc2007}
+
+\end{document}
+
+
+
+
+
+%%% Local Variables: 
+%%% mode: latex
+%%% TeX-master: t
+%%% End: 
