@@ -2,6 +2,7 @@ type t
 
 val self : unit -> t
 val id : t -> int
+val thread: int -> t
 
 val create: ('a -> 'b) -> 'a -> t
 val exit: unit -> unit

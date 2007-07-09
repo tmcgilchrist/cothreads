@@ -23,6 +23,7 @@ type 'a portal = string
 
 let self () = {pid = Unix.getpid ()}
 let id t = t.pid
+let thread i = {pid = i}
 
 let perm = 0o600
 let bsize = Marshal.header_size + 128
@@ -127,31 +128,34 @@ let sub_serv p f1 f2 =
   services := services'
 
 
-exception End_of_service
+module Ith_Set = Set.Make (struct type t = ith let compare = compare end)
+let ith = ref Ith_Set.empty
 
-let run_services () =
+let run_services f =
   let serv_conf = List.map
     (fun (p, fl) ->
        create_portal p;
        let fd = openfile p [O_RDWR] perm in
        (fd, List.rev_map Obj.obj fl)
     ) (List.rev !services) in
-  let fds,_ = List.split serv_conf in
-  try
-    while true do
-      let ready, _, _ = select fds [] [] (-1.) in
-      List.iter
-        (fun fd ->
-           let v = marshal_read fd in
-           List.iter (fun f -> f v) (List.assoc fd serv_conf)
-        ) ready;
-    done
-  with e ->
-    (List.iter close fds;
-     List.iter (fun (p, _) -> remove_portal p) !services;
-     if e = End_of_service then () else raise e
-    )
-
+  let _ = f () in
+  let fds , _ = List.split serv_conf in
+  let rec run timeout =
+    let ready, _, _ = select fds [] [] timeout in
+    match ready with
+    | [] -> ()
+    | _ -> 
+        List.iter 
+          (fun fd ->
+               let v = marshal_read fd in
+               List.iter (fun f -> f v) (List.assoc fd serv_conf)
+          ) ready;
+        let new_timeout = if Ith_Set.is_empty !ith then 0. else (-1.) in
+        run new_timeout in
+  let error = try (run (-1.); None) with e -> Some e in
+  List.iter close fds;
+  List.iter (fun (p, _) -> remove_portal p) !services;
+  match error with None -> () | Some e -> raise e
 
 (* Framework ends *)
 
@@ -165,40 +169,45 @@ let rec unreg () =
   let flag = demand (self ()) (fun x p -> `Delete (x, p)) root_portal in
   if not flag then unreg ()
 
+let rec reg ppid pid =
+  let flag = 
+    demand (ppid, pid) (fun (ppid,pid) p -> `Create (ppid, pid,p)) root_portal
+  in if flag then () else reg ppid pid
+
 let exit () = Pervasives.exit 0
 
 let inited = ref false
-
-let rec init () = 
-  assert (not !inited);
-  inited := true;
-  match fork () with
-  | -1 -> inited := false; init ()
-  | 0 -> (ignore (run_services ()); Pervasives.exit 0)
-  | pid -> 
-       let root = {pid = pid} in
-       let self = self () in
-       let success = 
-         demand (root, self) (fun (r,s) p -> `Create (r, s, p)) root_portal in
-       if success then at_exit (fun () -> unreg ())
-       else assert false
 
 let execute f x =
   Sys.set_signal Sys.sigterm (Sys.Signal_handle (fun _ ->  exit ()));
   (try ignore (f x) with e -> prerr_endline (Printexc.to_string e));
   exit ()
 
+let rec init () =
+  assert (not !inited);
+  inited := true; 
+  let p = new_portal () in
+  let _ = create_portal p in
+  match fork () with
+  | -1 -> inited := false; init ()
+  | 0 -> 
+      let b = recv p in
+      let _ = remove_portal p in
+      if b then (at_exit unreg; reg {pid = getppid ()} (self ())) else assert false
+  | pid -> execute run_services (fun () -> send true p)
+
 let rec create f x =
   if not !inited then init ();
+  let p = new_portal () in
+  let _ = create_portal p in
   match fork () with
-  | 0 -> execute f x
   | -1 -> create f x
+  | 0 -> if recv p then (remove_portal p; execute f x) else (remove_portal p; exit ())
   | pid ->
-     (let son = {pid = pid} in
-      let self = self () in
-      let success = 
-        demand (self,son) (fun (self,son) p -> `Create (self,son,p)) root_portal in
-      if success then son else assert false)
+      let son = {pid = pid} in
+      reg (self ()) son;
+      send true p;
+      son
 
 let kill t = Unix.kill (id t) Sys.sigterm
 
@@ -223,12 +232,14 @@ type root_msg =
     ]
 
 let root_func = function
-  | `Create (parent, self, p) -> 
-      ith_base := Ith_Map.add self {parent = parent; wait_lst = []} !ith_base;
+  | `Create (parent, son, p) -> 
+      ith := Ith_Set.add son !ith;
+      ith_base := Ith_Map.add son {parent = parent; wait_lst = []} !ith_base;
       send true p 
   | `Delete (self, p) -> 
       let {wait_lst = wl} = Ith_Map.find self !ith_base in
       List.iter (send true) wl; send true p;
+      ith := Ith_Set.remove self !ith;
       ith_base := Ith_Map.remove self !ith_base
   | `Wait (t, p) ->
       (try
