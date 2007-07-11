@@ -1,21 +1,30 @@
 include ../Makefile.template
 
-BACKENDS = threads vmthreads
+BACKENDS = threads vmthreads process
 
-.PHONY: all clean *install sub*
+COMMON = yor.cmi yor.cmo
 
-all: intf suball
-install: intfinstall subinstall
+INTERFACE = ithread.cmi stm.cmi
 
-clean: ocamlclean subclean
+.PHONY: all install clean
 
-intf: stm.cmi
+all: depend common interface suball
+install: commoninstall interfaceinstall subinstall
 
-intfinstall: 
+common: $(COMMON)
+commoninstall: common
 	$(MKDIR) $(INSTALLLIBDIR)
-	$(CP) stm.cmi $(INSTALLLIBDIR)
+	$(CP) $(COMMON) $(INSTALLLIBDIR)
+
+interface: $(INTERFACE)
+interfaceinstall: interface
+	$(MKDIR) $(INSTALLLIBDIR)
+	$(CP) $(INTERFACE) $(INSTALLLIBDIR)
 
 sub%:
 	@for i in $(BACKENDS); do $(MAKE) -C $$i $*; done
 
+clean: ocamlclean subclean
+
+include .depend
 
