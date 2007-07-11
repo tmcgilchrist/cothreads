@@ -1,5 +1,5 @@
 # Installation setting: Usually the only parameter needs customization
-INSTALLLIBDIR = $(OCAMLSTDLIBPATH)/stm
+INSTALLLIBDIR = $(OCAMLSTDLIBPATH)
 
 
 # Layout of urrent project
@@ -23,9 +23,9 @@ OCAMLOPTFLAGS=$(INCLUDES) # add other options for ocamlopt here
 
 .SUFFIXES: .cmo .cmi .cmx .ml .mli
 
-.ml.cmo:
-	$(OCAMLC) -c $(OCAMLCFLAGS) $<
 .mli.cmi:
+	$(OCAMLC) -c $(OCAMLCFLAGS) $<
+.ml.cmo:
 	$(OCAMLC) -c $(OCAMLCFLAGS) $<
 .ml.cmx:
 	$(OCAMLOPT) -c $(OCAMLOPTFLAGS) $<
