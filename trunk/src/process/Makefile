@@ -3,7 +3,7 @@ include ../../Makefile.template
 INCLUDES = -I ..
 
 COMMON = coordinator.cmo
-MODULES = cothread mutex
+MODULES = cothread mutex condition
 MODULESBYT = $(MODULES:%=%.cmo)
 INTERFACE = $(MODULES:%=%.mli) $(MODULES:%=%.cmi)
 

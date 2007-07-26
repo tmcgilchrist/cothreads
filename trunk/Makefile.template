@@ -39,6 +39,8 @@ depend .depend:
 ocamlclean:
 	rm -f *.cmi *.cmo *.cmx *.cma *.cmxa *.a *.o .depend *~
 
+include .depend
+
 
 ## Common Routines
 MKDIR = mkdir -p
