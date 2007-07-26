@@ -4,7 +4,7 @@ open Coordinator
 
 let rec force_create name =
   try openfile name [O_RDWR; O_CREAT; O_EXCL] 0o600
-  with Unix_error (EEXIST,_,_) -> Sys.remove name; force_create name
+  with Unix_error (EEXIST,_,_) -> unlink name; force_create name
 
 let lock_name, lock_fd = 
   let my_id = id (self ()) in
@@ -15,7 +15,7 @@ let lock_name, lock_fd =
      pid. So we can use force_create, if lockfile already exists, it means it's
      lefted by previous execution *)
   let fd = force_create name in
-  let _ = at_exit (fun () -> if (id (self ())) = my_id then Sys.remove name) in
+  let _ = unlink name in
   name, fd
 
 type t = int (* The offset *)

@@ -4,7 +4,7 @@ BACKENDS = threads vmthreads process
 
 COMMON = yor.cmi yor.cmo libext.cmo 
 
-INTERFACE = cothread.cmi stm.cmi mutex.mli mutex.cmi
+INTERFACE = cothread.cmi stm.cmi mutex.mli mutex.cmi condition.mli condition.cmi
 
 %.mli: $(OCAMLSTDLIBPATH)/%.mli
 	@if [ ! -L $@ ]; then ln -s $< .; fi
