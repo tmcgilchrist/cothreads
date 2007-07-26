@@ -1,14 +1,19 @@
 include ../../Makefile.template
 
-ithread.cmo ithread.cmx: ithread.cmi ithread.mli
+INCLUDES = -I ..
 
-ithread.cmi: ../ithread.cmi
-	@if [ ! -L "ithread.cmi" ]; then ln -s ../ithread.cmi .; fi
+COMMON = coordinator.cmo
+MODULES = cothread mutex
+MODULESBYT = $(MODULES:%=%.cmo)
+INTERFACE = $(MODULES:%=%.mli) $(MODULES:%=%.cmi)
 
-ithread.mli: ../ithread.mli
-	@if [ ! -L "ithread.mli" ]; then ln -s ../ithread.mli .; fi
+%.mli: ../%.mli
+	@if [ ! -L $@ ]; then ln -s $< .; fi
+%.cmi: ../%.cmi
+	@if [ ! -L $@ ]; then ln -s $< .; fi
 
-all: ithread.cmo ithread.cmx
+
+all: $(COMMON) $(INTERFACE) $(MODULESBYT)
 
 install:
 	$(MKDIR) $(INSTALLLIBDIR)/process
@@ -16,7 +21,7 @@ install:
 	$(LN) $(INSTALLLIBDIR)/ithread.cmi $(INSTALLLIBDIR)/process/ithread.cmi
 
 clean: ocamlclean
-	$(RM) ithread.mli
+	$(RM) $(INTERFACE)
 
 
 
