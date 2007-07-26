@@ -1,6 +1,6 @@
 include ../../Makefile.template
 
-INCLUDES=-thread
+INCLUDES=-I +threads
 
 stm.cmo stm.cmx: stm.cmi stm.mli
 

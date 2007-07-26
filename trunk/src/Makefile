@@ -2,9 +2,12 @@ include ../Makefile.template
 
 BACKENDS = threads vmthreads process
 
-COMMON = yor.cmi yor.cmo
+COMMON = yor.cmi yor.cmo libext.cmo 
 
-INTERFACE = ithread.cmi stm.cmi
+INTERFACE = cothread.cmi stm.cmi mutex.mli mutex.cmi
+
+%.mli: $(OCAMLSTDLIBPATH)/%.mli
+	@if [ ! -L $@ ]; then ln -s $< .; fi
 
 .PHONY: all install clean
 
@@ -25,6 +28,7 @@ sub%:
 	@for i in $(BACKENDS); do $(MAKE) -C $$i $*; done
 
 clean: ocamlclean subclean
+	$(RM) $(INTERFACE)
 
 include .depend
 

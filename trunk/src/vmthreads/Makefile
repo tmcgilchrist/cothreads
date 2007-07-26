@@ -1,6 +1,6 @@
 include ../../Makefile.template
 
-INCLUDES=-vmthread
+INCLUDES=-I +vmthreads
 
 stm.cmo: stm.cmi stm.mli stm.ml
 
