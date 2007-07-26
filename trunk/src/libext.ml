@@ -1,3 +1,5 @@
+open Unix
+
 let debug_level = ref max_int
 
 let debug ?(level = 0) f = if level <= !debug_level then f ()
@@ -13,19 +15,36 @@ let list_find_split =
 let filename_temp_filename prefix suffix_fun =
   Filename.concat Filename.temp_dir_name (prefix^(suffix_fun ()))
 
+(* Atomically write OCaml value to file_descr for both block/nonblock mode *) 
 let marshal_write v fd =
   let rec write_rec s ofs len =
-    let len' = Unix.write fd s ofs len in
-    if len' < len then write_rec s (ofs + len') (len - len') in
+    let len' = 
+      try write fd s ofs len with 
+      | Unix_error (EAGAIN,_,_) 
+      | Unix_error (EWOULDBLOCK,_,_) when ofs > 0 -> 0
+      | e -> raise e in
+    match len' with
+    | 0 -> ignore (select [] [fd] [] (-1.)); write_rec s ofs len
+    | _ when len' < len -> write_rec s (ofs + len') (len - len')
+    | _ -> () in
   let str = Marshal.to_string v [Marshal.Closures] in
   write_rec str 0 (String.length str)
 
+(* Atomically read OCaml value from file_descr for both block/nonblock mode *) 
 let marshal_read fd =
   let bsize = Marshal.header_size + 128 in
   let buf = String.create bsize in
   let rec read_rec fd buf ofs len =
-    let len' = Unix.read fd buf ofs len in
-    if len' < len then read_rec fd buf (ofs + len') (len - len') in
+    let len' =
+      try Some (read fd buf ofs len) with 
+      | Unix_error (EAGAIN,_,_) 
+      | Unix_error (EWOULDBLOCK,_,_) when ofs > 0 -> None
+      | e -> raise e in
+    match len' with
+    | Some 0 -> raise End_of_file
+    | Some l when l = len -> ()
+    | Some l -> read_rec fd buf (ofs + l) (len -l)
+    | None -> ignore (select [fd] [] [] (-1.)); read_rec fd buf ofs len in
   read_rec fd buf 0 Marshal.header_size;
   let data_size = Marshal.data_size buf 0 in
   let total_size = Marshal.header_size + data_size in
