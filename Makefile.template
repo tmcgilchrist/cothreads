@@ -37,7 +37,7 @@ depend .depend:
 	$(OCAMLDEP) $(INCLUDES) *.ml *.mli > .depend
 
 ocamlclean:
-	rm -f *.cmi *.cmo *.cmx *.cma *.cmxa *.a *.o .depend *~
+	rm -f *.cmi *.cmo *.cmx *.cma *.cmxa *.a *.o *.annot .depend *~
 
 include .depend
 

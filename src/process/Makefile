@@ -2,9 +2,10 @@ include ../../Makefile.template
 
 INCLUDES = -I ..
 
-COMMON = coordinator.cmo
-MODULES = cothread mutex condition
+COMMON = coordinator.cmo coordinator.cmx
+MODULES = cothread mutex condition event
 MODULESBYT = $(MODULES:%=%.cmo)
+MODULESNAT = $(MODULES:%=%.cmx)
 INTERFACE = $(MODULES:%=%.mli) $(MODULES:%=%.cmi)
 
 %.mli: ../%.mli
@@ -13,7 +14,7 @@ INTERFACE = $(MODULES:%=%.mli) $(MODULES:%=%.cmi)
 	@if [ ! -L $@ ]; then ln -s $< .; fi
 
 
-all: $(COMMON) $(INTERFACE) $(MODULESBYT)
+all: $(COMMON) $(INTERFACE) $(MODULESBYT) $(MODULESNAT)
 
 install:
 	$(MKDIR) $(INSTALLLIBDIR)/process

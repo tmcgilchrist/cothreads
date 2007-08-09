@@ -11,8 +11,6 @@ let kill = kill
 let delay d = ignore (select [] [] [] d)
 
 
-let inited = ref false
-
 let execute f x =
   Sys.set_signal Sys.sigterm (Sys.Signal_handle (fun _ ->  exit ()));
   let exit_code = 
@@ -21,41 +19,60 @@ let execute f x =
   Pervasives.exit exit_code
 
 let rec unreg () = 
-  let flag = demand (self ()) (fun x p -> `Delete (x, p)) root_portal in
+  let flag = demand_portal (self ()) (fun x p -> `Delete (x, p)) root_portal in
   if not flag then unreg ()
 
 let rec reg ppid pid =
-  let flag = demand (ppid, pid) 
+  let flag = demand_portal (ppid, pid) 
     (fun (ppid,pid) p -> `Create (ppid, pid, p)) root_portal in 
   if flag then () else reg ppid pid
+
+let inited = ref false
 
 let rec init () =
   assert (not !inited);
   inited := true; 
-  let _ = create_portal root_portal in
+  let root = self () in
   match fork () with
-  | -1 -> inited := false; remove_portal root_portal; init ()
-  | 0 -> at_exit unreg; reg (thread (getppid ())) (self ())
+  | -1 -> inited := false; init ()
+  | 0 -> at_exit unreg; reg root (self ())
   | pid -> execute run_services ()
 
 let rec create f x =
+  flush_all ();
+  Gc.full_major ();
   if not !inited then init ();
-  let p = new_portal () in
-  let _ = create_portal p in
+  let p = create_portal () in
   match fork () with
   | -1 -> create f x
-  | 0 -> if recv p then (remove_portal p; execute f x) else (remove_portal p; Pervasives.exit 2)
+  | 0 -> if read_portal p then (remove_portal p; execute f x) else (remove_portal p; assert false)
   | pid ->
       let son = thread pid in
       reg (self ()) son;
-      send true p;
+      write_portal true p;
       son
 
 let join t = 
-  let success = demand t (fun t p -> `Wait (t, p)) root_portal in
+  let success = demand_portal t (fun t p -> `Wait (t, p)) root_portal in
   if not success then assert false
 
 let test s =
-  let ns = demand s (fun s p -> `Test (s, p)) root_portal in
+  let ns = demand_portal s (fun s p -> `Test (s, p)) root_portal in
   print_endline ns
 
+let select = Unix.select
+
+let wait_pid pid = Unix.waitpid [] pid  
+
+let yield () = ()
+
+let sigmask = Unix.sigprocmask
+
+let wait_signal sigs =
+  let gotsig = ref 0 in
+  let sighandler s = gotsig := s in
+  let oldhdlrs =
+    List.map (fun s -> Sys.signal s (Sys.Signal_handle sighandler)) sigs in
+  if !gotsig = 0 then Unix.sigsuspend sigs;
+  List.iter2 Sys.set_signal sigs oldhdlrs;
+  !gotsig

@@ -1,21 +1,16 @@
 (* Example taken from the OReilly book *)
 
-module Thread = Cothread
-open Thread
 open Libext
+open Coordinator
 
 let create () =
-  let perm = 0o600 in
-  let my_id = id (self ()) in
-  let name = filename_temp_filename "_pipe"
-    (fun () -> Printf.sprintf "%08X" my_id) in
-  let () = Unix.mkfifo name perm in
-  let read_fd = Unix.openfile name [Unix.O_RDONLY; Unix.O_NONBLOCK] perm in
-  let write_fd = Unix.openfile name [Unix.O_WRONLY] perm in
+  let name = fresh_name "_pipe" in
+  let () = Unix.mkfifo name file_perm in
+  let read_fd = Unix.openfile name [Unix.O_RDONLY; Unix.O_NONBLOCK] file_perm in
+  let write_fd = Unix.openfile name [Unix.O_WRONLY] file_perm in
   let _ = Unix.unlink name in
   (read_fd, write_fd)
 ;;
-
 
 let c = Condition.create () ;;
 let m = Mutex.create ();;
@@ -24,52 +19,59 @@ let r,w = create ();;
 
 let produce i p d = 
   incr p ;
-  Thread.delay d ;
-  Printf.printf "Producer (%d) has produced %d\n" i !p ;
-  flush stdout ;;
-
-let store2 i p =
+  Cothread.delay d ;
+  debug (fun _ -> Printf.printf "Producer (%d) has produced %d\n" i !p);
   Mutex.lock m ;
+  debug (fun _ -> Printf.printf "Producer (%d) take the lock\n" i);
   marshal_write (i,!p) w;
-  Printf.printf "Producer (%d) has added its %dth product\n" i !p ;
-  flush stdout ;
-  Condition.signal c ;
-  Mutex.unlock m ;;
+  debug (fun _ -> Printf.printf "Producer (%d) has added its %dth product\n" i !p);
+  Condition.signal c;
+  debug (fun _ -> Printf.printf "Producer (%d) has signal others\n" i);
+  Mutex.unlock m; 
+  debug (fun _ -> Printf.printf "Producer (%d) has unlock it\n" i)
 
 let producer2 i =
   let p = ref 0 in
-  let d = Random.float 2. 
-  in while true do
+  let d = Random.float 0.02 in
+  try
+  while true do
     produce i p d;
-    store2 i p;
-    Thread.delay (Random.float 2.5)
-  done ;; 
+    Cothread.delay (Random.float 0.02);
+  done 
+  with Unix.Unix_error (e,_,_) -> 
+    debug (fun _ -> Printf.printf "Producer (%d) exit because of %s" i (Unix.error_message e))
 
 let wait2 i =
   Mutex.lock m ;
-  while (let rr,_,_ = Unix.select [r] [] [] 0. in rr = []) do
-    Printf.printf "Consumer (%d) is waiting\n" i ;
-    Condition.wait c m
+  debug (fun _ -> Printf.printf "Consumer (%d) take the lock\n" i);
+  while (let rr,_,_ = Unix.select [r] [] [] 0.0 in rr = []) do
+    debug (fun _ -> Printf.printf "Consumer (%d) is waiting (and relase the lock)\n" i);
+    Condition.wait c m;
+    debug (fun _ -> Printf.printf "Consumer (%d) wakes up\n" i);
   done ;;
 
 let take2 i =
   let ip, p = marshal_read r in
-  Printf.printf "Consumer (%d) " i ;
-  Printf.printf "takes product (%d, %d)\n" ip p ;
-  flush stdout ;
-  Mutex.unlock m ;;
+  debug (fun _ -> Printf.printf "Consumer (%d) takes product (%d, %d)\n" i ip p) ;
+  Mutex.unlock m ;
+  debug (fun _ -> Printf.printf "Consumer (%d) release the lock\n" i)  
 
 let consumer2 i =
+  try 
   while true do
     wait2 i;
     take2 i;
-    Thread.delay (Random.float 2.5)
-  done ;;
-
+    Cothread.delay (Random.float 0.02);
+  done
+  with Unix.Unix_error (e,_,_) -> 
+    debug (fun _ -> Printf.printf "Consumer (%d) exit because of %s" i (Unix.error_message e)) ;;
 
 for i = 0 to 3 do
-  ignore (Thread.create producer2 i);
-  ignore (Thread.create consumer2 i)
+  ignore (Cothread.create producer2 i);
 done ;
-while true do Thread.delay 5. done ;; 
+for i = 0 to 9 do
+  ignore (Cothread.create consumer2 i)
+done;
+
+while true do Cothread.delay 5. done ;; 
 
