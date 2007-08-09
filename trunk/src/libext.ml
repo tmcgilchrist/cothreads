@@ -2,7 +2,11 @@ open Unix
 
 let debug_level = ref max_int
 
-let debug ?(level = 0) f = if level <= !debug_level then f ()
+let debug ?(level = 0) f = 
+  if level <= !debug_level then 
+    (Printf.printf "(at %f: ) " (gettimeofday ());
+     f (); 
+     flush Pervasives.stdout)
 
 let list_find_split =
   let rec find_rec test acc = function
@@ -10,25 +14,20 @@ let list_find_split =
     | h :: t -> if test h then (acc, h, t) else find_rec test (h::acc) t in
   fun test l -> find_rec test [] l
 
-(* The function doesn't gaurentee the nonexistance of destination file when
-   it's going to be creating *)
-let filename_temp_filename prefix suffix_fun =
-  Filename.concat Filename.temp_dir_name (prefix^(suffix_fun ()))
 
 (* Atomically write OCaml value to file_descr for both block/nonblock mode *) 
-let marshal_write v fd =
-  let rec write_rec s ofs len =
+let marshal_write =
+  let rec write_rec fd s ofs len =
     let len' = 
-      try write fd s ofs len with 
-      | Unix_error (EAGAIN,_,_) 
-      | Unix_error (EWOULDBLOCK,_,_) when ofs > 0 -> 0
-      | e -> raise e in
+      try write fd s ofs len 
+      with Unix_error ((EAGAIN|EWOULDBLOCK),_,_) when ofs > 0 -> 0 in
     match len' with
-    | 0 -> ignore (select [] [fd] [] (-1.)); write_rec s ofs len
-    | _ when len' < len -> write_rec s (ofs + len') (len - len')
+    | 0 -> ignore (select [] [fd] [] (-1.)); write_rec fd s ofs len
+    | _ when len' < len -> write_rec fd s (ofs + len') (len - len')
     | _ -> () in
-  let str = Marshal.to_string v [Marshal.Closures] in
-  write_rec str 0 (String.length str)
+  fun v fd ->
+    let str = Marshal.to_string v [Marshal.Closures] in
+    write_rec fd str 0 (String.length str)
 
 (* Atomically read OCaml value from file_descr for both block/nonblock mode *) 
 let marshal_read fd =

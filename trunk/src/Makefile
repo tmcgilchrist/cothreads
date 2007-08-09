@@ -2,9 +2,9 @@ include ../Makefile.template
 
 BACKENDS = threads vmthreads process
 
-COMMON = yor.cmi yor.cmo libext.cmo 
+COMMON = yor.cmi yor.cmo libext.cmo libext.cmx
 
-INTERFACE = cothread.cmi stm.cmi mutex.mli mutex.cmi condition.mli condition.cmi
+INTERFACE = cothread.cmi stm.cmi mutex.mli mutex.cmi condition.mli condition.cmi event.mli event.cmi
 
 %.mli: $(OCAMLSTDLIBPATH)/%.mli
 	@if [ ! -L $@ ]; then ln -s $< .; fi

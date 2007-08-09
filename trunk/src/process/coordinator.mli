@@ -22,14 +22,26 @@ module ThreadMap :
     val compare : ('a -> 'a -> int) -> 'a t -> 'a t -> int
     val equal : ('a -> 'a -> bool) -> 'a t -> 'a t -> bool
   end
+val file_perm : int
+val dir_perm: int
+val fresh_name: string -> string
+val remove_exists: string -> unit
+
 type +'a portal
-val perm : int
-val new_portal : unit -> 'a portal
-val create_portal : 'a portal -> unit
+val create_portal : unit -> 'a portal
 val remove_portal : 'a portal -> unit
-val send : 'a -> 'a portal -> unit
-val recv : 'a portal -> 'a
-val demand : 'a -> ('a -> 'b portal -> 'c) -> 'c portal -> 'b
+val read_portal : 'a portal -> 'a
+val write_portal : 'a -> 'a portal -> unit
+val poll_read_portal: 'a portal -> 'a option
+val poll_write_portal: 'a -> 'a portal -> (unit -> unit) option
+
+val demand_portal : 'a -> ('a -> 'b portal -> 'c) -> 'c portal -> 'b
+
+type +'a tunnel
+val new_tunnel: unit -> 'a tunnel
+val read_tunnel: 'a tunnel -> 'a option
+val write_tunnel: 'a -> 'a tunnel -> unit
+
 val new_serv : 'a portal -> ('a -> unit) -> unit
 val del_serv : 'a portal -> ('a -> unit) -> unit
 val sub_serv : 'a portal -> ('a -> unit) -> ('a -> unit) -> unit

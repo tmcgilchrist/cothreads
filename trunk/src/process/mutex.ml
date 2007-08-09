@@ -1,22 +1,14 @@
 open Unix
 open Libext
 open Coordinator
+open Cothread
 
-let rec force_create name =
-  try openfile name [O_RDWR; O_CREAT; O_EXCL] 0o600
-  with Unix_error (EEXIST,_,_) -> unlink name; force_create name
-
-let lock_name, lock_fd = 
-  let my_id = id (self ()) in
-  let name = filename_temp_filename "_mutex" 
-    (fun _ -> Printf.sprintf "%08X" my_id) in
-  (* According to our naming convention, there shouldn't be any confliction on
-     lockfile naming, since there can be only one running process for each
-     pid. So we can use force_create, if lockfile already exists, it means it's
-     lefted by previous execution *)
-  let fd = force_create name in
-  let _ = unlink name in
-  name, fd
+let lock_fd = 
+  let lock_name = fresh_name "_mutex" in
+  remove_exists lock_name; 
+  let fd = openfile lock_name [O_WRONLY; O_CREAT] file_perm in
+  remove_exists lock_name;
+  fd
 
 type t = int (* The offset *)
 
@@ -31,7 +23,7 @@ let create =
     let mutex_part = r := (!r + 1) land (1 lsr bits_of_mutex - 1); !r in
     id_part lsl bits_of_mutex + mutex_part
 
-let lock lk = 
+let rec lock lk = 
   if lk <> lseek lock_fd lk SEEK_SET then assert false;
   lockf lock_fd F_LOCK 1
 

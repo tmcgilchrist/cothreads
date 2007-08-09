@@ -1,14 +1,17 @@
 open Libext
 open Unix
 
+
 type thread = int
+
+(* We suppose the id limitation of threads is 16bit *)
+let bits_of_id = 16
+
+(* i.e. 0xFFFF *)
+let capability = 1 lsl bits_of_id - 1 
 
 let self () = Unix.getpid ()
 
-let bits_of_id = 16
-let capability = 1 lsl bits_of_id - 1
-
-(* We suppose the number limitation of threads is 65535 *)
 let id t = t land capability
 
 let thread id = assert (id <= capability); id 
@@ -17,48 +20,94 @@ let exit () = Pervasives.exit 0
 
 let kill t = Unix.kill (id t) Sys.sigterm
 
-module ThreadMap = Map.Make (struct type t = thread let compare = compare end)
+let file_perm = 0o600
+let dir_perm = 0o700
 
+let work_dir_name = "cothread"
+let work_dir = 
+  let name = Filename.concat Filename.temp_dir_name work_dir_name in
+  if not (Sys.file_exists name) then mkdir name dir_perm;
+  name
+
+(* fresh_name ensure that there won't exist name confliction between running
+   processes as far as the process who created the name exists.
+*)
+let fresh_name =
+  let tbl = Hashtbl.create 17 in
+  fun prefix ->
+    let self_id = id (self ()) in
+    let counter = 
+      try Hashtbl.find tbl (prefix, self_id)
+      with Not_found -> let r = ref 0 in Hashtbl.add tbl (prefix, self_id) r; r in
+    counter := !counter + 1 land max_int;
+    let file_name = Printf.sprintf "%s%04X%08X" prefix self_id !counter in
+    Filename.concat work_dir file_name
+
+let remove_exists name = try unlink name with Unix_error (ENOENT,_,_) -> ()
+
+module ThreadMap = Map.Make (struct type t = thread let compare = compare end)
 
 type 'a portal = string
 
-let perm = 0o600
+let create_portal () = 
+  let portal = fresh_name "_portal" in
+  remove_exists portal;
+  mkfifo portal file_perm;
+  portal
 
-let new_portal =
-  let fresh_name = 
-    let r = ref 0 in
-    fun () -> 
-      let myid = (id (self ())) land 0xFFFF in
-      let mynum = r := !r + 1 land 0x3FFFFFFF; !r in
-      Printf.sprintf "%04X%08X" myid mynum in
-  fun () -> filename_temp_filename "cothread" fresh_name
+let remove_portal portal = remove_exists portal
 
-let create_portal p = 
-  if not (Sys.file_exists p) then mkfifo p perm
-
-let remove_portal p =
-  if Sys.file_exists p then Sys.remove p
-
-
-let send (x: 'a)  (p: 'a portal) = 
-  let fd = openfile p [O_WRONLY] perm in
-  marshal_write x fd;
-  close fd
-
-let recv (p: 'a portal) : 'a  =
-  let fd = openfile p [O_RDONLY] perm in
+let read_portal (p: 'a portal) : 'a  =
+  let fd = openfile p [O_RDONLY] file_perm in
   let v = marshal_read fd in
   close fd;
   v
 
-let demand (v: 'a) (w: 'a -> 'b portal -> 'c) (p: 'c portal) : 'b =
-  let tp = new_portal () in
+let poll_read_portal (p: 'a portal) : 'a =
+  let fd = openfile p [O_RDONLY; O_NONBLOCK] file_perm in
+  let data = 
+    try Some (marshal_read fd)
+    with End_of_file | Unix_error ((EAGAIN|EWOULDBLOCK),_,_) -> None in
+  close fd;
+  data
+
+let write_portal (x: 'a)  (p: 'a portal) = 
+  let fd = openfile p [O_WRONLY] file_perm in
+  marshal_write x fd;
+  close fd
+
+let poll_write_portal (x : 'a) (p: 'a portal) =
+  let fd = openfile p [O_RDWR; O_NONBLOCK] file_perm in
+  try marshal_write x fd; Some (fun () -> close fd)
+  with Unix_error ((EAGAIN|EWOULDBLOCK),_,_) -> None
+
+let demand_portal (v: 'a) (w: 'a -> 'b portal -> 'c) (p: 'c portal) : 'b =
+  let tp = create_portal () in
   let pkg = w v tp in
-  create_portal tp;
-  send pkg p;
-  let ack = recv tp in
+  write_portal pkg p;
+  let ack = read_portal tp in
   remove_portal tp;
   ack
+
+type 'a tunnel = file_descr * file_descr
+
+let new_tunnel =
+  let close_tunnel (r,w) = close r; close w in
+  fun () -> 
+    let tunnel_file = fresh_name "_tunnel" in
+    remove_exists tunnel_file;
+    mkfifo tunnel_file file_perm;
+    let read_fd = openfile tunnel_file [O_RDONLY; O_NONBLOCK] file_perm in
+    let write_fd = openfile tunnel_file [O_WRONLY] file_perm in
+    remove_exists tunnel_file;
+    let tunnel = read_fd, write_fd in
+    Gc.finalise close_tunnel tunnel;
+    tunnel
+
+let read_tunnel (r, _) = 
+  try Some (marshal_read r) with Unix_error ((EAGAIN|EWOULDBLOCK),_,_) -> None
+
+let write_tunnel v (_, w) = marshal_write v w
 
 let services : (string * Obj.t list) list ref = ref []
 
@@ -102,8 +151,7 @@ let rec handle_all e cont handlers = match handlers with
 let run_services () =
   let serv_conf = List.map
     (fun (p, fl) ->
-       create_portal p;
-       let fd = openfile p [O_RDWR] perm in
+       let fd = openfile p [O_RDWR] file_perm in
        (fd, List.rev_map Obj.obj fl)
     ) (List.rev !services) in
   let fds , _ = List.split serv_conf in
@@ -137,7 +185,7 @@ type root_msg =
     |`Test of string * string portal
     ]
 
-let root_portal: root_msg portal = new_portal ()
+let root_portal: root_msg portal = create_portal ()
 
 type thread_info = {parent: thread; wait_lst: bool portal list}
 
@@ -150,11 +198,11 @@ let exit_handler e cont = match e with Quit -> () | e -> raise e
 let root_func = function
   | `Create (parent, son, p) -> 
       root_db := ThreadMap.add son {parent = parent; wait_lst = []} !root_db;
-      send true p 
+      write_portal true p 
   | `Delete (self, p) -> 
       let {wait_lst = wl} = ThreadMap.find self !root_db in
-      List.iter (send true) wl; 
-      send true p;
+      List.iter (write_portal true) wl; 
+      write_portal true p;
       root_db := ThreadMap.remove self !root_db;
       if ThreadMap.is_empty !root_db then raise Quit
   | `Wait (t, p) ->
@@ -162,8 +210,8 @@ let root_func = function
          let th_info = ThreadMap.find t !root_db in
          let new_info = {th_info with wait_lst = p :: th_info.wait_lst} in
          root_db := ThreadMap.add t new_info !root_db
-       with Not_found -> send true p)
-  | `Test (str, p) -> send ("Root got your msg "^str) p
+       with Not_found -> write_portal true p)
+  | `Test (str, p) -> write_portal ("Root got your msg "^str) p
 
 
 let _ = new_serv root_portal root_func
