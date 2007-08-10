@@ -1,29 +1,41 @@
 include ../../Makefile.template
 
-INCLUDES=-I +vmthreads
+INCLUDES=-I +vmthreads -I ..
 
-stm.cmo: stm.cmi stm.mli stm.ml
+BACKEND = vmthreads
 
-stm.cmi: ../stm.cmi
-	@if [ ! -L "stm.cmi" ]; then ln -s ../stm.cmi .; fi
+COMMONMOD = cothread stm
+COMMONMODSRC = $(COMMONMOD:%=%.ml)
+COMMONMODBYT = $(COMMONMOD:%=%.cmo)
+COMMONMODINTFSRC = $(COMMONMOD:%=%.mli)
+COMMONMODINTFCOM = $(COMMONMOD:%=%.cmi)
+COMMONMODINTF = $(COMMONMODINTFSRC) $(COMMONMODINTFCOM)
 
-stm.mli: ../stm.mli
-	@if [ ! -L "stm.mli" ]; then ln -s ../stm.mli .; fi
+LIB = cothreads
+LIBBYT = $(LIB:%=%.cma)
 
-stm.ml: ../threads/stm.ml
-	@if [ ! -L "stm.ml" ]; then ln -s ../threads/stm.ml .; fi
+INSTALLDIR = $(INSTALLLIBDIR)/$(BACKEND)
+INSTALLFILES = $(COMMONMODINTFCOM) $(LIBBYT)
 
 
-all: stm.cmo
+$(LIBBYT): $(COMMONMODBYT)
+	$(OCAMLC) -a -o $@ threads.cma $+
 
-install:
-	$(MKDIR) $(INSTALLLIBDIR)/vmthreads
-	$(CP) stm.cmo $(INSTALLLIBDIR)/vmthreads
-	$(LN) $(INSTALLLIBDIR)/stm.cmi $(INSTALLLIBDIR)/vmthreads/stm.cmi
+$(COMMONMODINTF):%:../%
+	@if [ ! -e $@ -a -e ../$@ ]; then ln -s $< .; fi
+
+$(COMMONMODSRC):%:../threads/%
+	@if [ ! -e $@ -a -e $< ]; then ln -s $< .; fi
+
+.PHONY: all install clean uninstall
+
+all: $(COMMONMODSRC) $(COMMONMODINTF) $(LIBBYT)
+
+install: all
+	$(MKDIR) $(INSTALLDIR)
+	$(CP) $(INSTALLFILES) $(INSTALLDIR)
 
 clean: ocamlclean
-	$(RM) stm.mli stm.ml
 
-
-
-
+uninstall:
+	for i in $(INSTALLFILES); do $(RM) $(INSTALLDIR)/$$i; done

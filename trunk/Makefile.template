@@ -9,8 +9,8 @@ EXAMPLEDIR = example
 
 # OCaml related setting
 
-OCAMLC = ocamlc
-OCAMLOPT = ocamlopt
+OCAMLC = ocamlc $(OCAMLCFLAGS)
+OCAMLOPT = ocamlopt $(OCAMLOPTFLAGS)
 OCAMLDEP = ocamldep
 OCAMLDOC = ocamldoc
 OCAMLSTDLIBPATH = $(shell $(OCAMLC) -where)
@@ -24,11 +24,11 @@ OCAMLOPTFLAGS=$(INCLUDES) # add other options for ocamlopt here
 .SUFFIXES: .cmo .cmi .cmx .ml .mli
 
 .mli.cmi:
-	$(OCAMLC) -c $(OCAMLCFLAGS) $<
+	$(OCAMLC) -c $<
 .ml.cmo:
-	$(OCAMLC) -c $(OCAMLCFLAGS) $<
+	$(OCAMLC) -c $<
 .ml.cmx:
-	$(OCAMLOPT) -c $(OCAMLOPTFLAGS) $<
+	$(OCAMLOPT) -c $<
 
 
 .PHONY: depend all install doc uninstall clean ocamlclean
@@ -36,10 +36,9 @@ OCAMLOPTFLAGS=$(INCLUDES) # add other options for ocamlopt here
 depend .depend: 
 	$(OCAMLDEP) $(INCLUDES) *.ml *.mli > .depend
 
+
 ocamlclean:
 	rm -f *.cmi *.cmo *.cmx *.cma *.cmxa *.a *.o *.annot .depend *~
-
-include .depend
 
 
 ## Common Routines
@@ -55,3 +54,6 @@ CHOWN = chown -R
 TAR = tar
 TARC = $(TAR) czvf
 TARX = $(TAR) xzvf
+AR = ar
+
+-include .depend

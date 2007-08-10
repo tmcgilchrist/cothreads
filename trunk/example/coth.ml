@@ -6,7 +6,7 @@ let test_f () =
   let myid = id (self ()) in
   let r = Random.int 10000 in
   for i = 0 to r do
-    test (Printf.sprintf "%dth test from %d\n" i myid);
+    (*    test (Printf.sprintf "%dth test from %d\n" i myid); *)
     while (not (Mutex.try_lock lk)) do 
       Printf.printf "%d fail to get the mutex\n" myid;
     done;
