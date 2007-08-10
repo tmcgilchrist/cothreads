@@ -7,7 +7,7 @@ install:
 	$(MAKE) -C $(SOURCEDIR) $@
 
 uninstall:
-	$(RM) $(INSTALLLIBDIR)
+	$(MAKE) -C $(SOURCEDIR) $@
 
 doc:
 	$(MAKE) -C $(DOCDIR) $@
