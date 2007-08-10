@@ -6,10 +6,7 @@ type t = thread
 
 let self = self
 let id = id
-let exit = exit
-let kill = kill
-let delay d = ignore (select [] [] [] d)
-
+let exit () = Pervasives.exit 0
 
 let execute f x =
   Sys.set_signal Sys.sigterm (Sys.Signal_handle (fun _ ->  exit ()));
@@ -52,15 +49,22 @@ let rec create f x =
       write_portal true p;
       son
 
+let kill t = Unix.kill (id t) Sys.sigterm
+
+let delay d = ignore (select [] [] [] d)
+
 let join t = 
   let success = demand_portal t (fun t p -> `Wait (t, p)) root_portal in
   if not success then assert false
 
-let test s =
-  let ns = demand_portal s (fun s p -> `Test (s, p)) root_portal in
-  print_endline ns
-
 let select = Unix.select
+
+let wait_read fd = ignore (select [fd] [] [] (-1.))
+let wait_write fd = ignore (select [fd] [] [] (-1.))
+let wait_timed_read fd time = 
+  match select [fd] [] [] time with [],_,_ -> false | _ -> true
+let wait_timed_write fd time = 
+  match select [fd] [] [] time with [],_,_ -> false | _ -> true
 
 let wait_pid pid = Unix.waitpid [] pid  
 
@@ -76,3 +80,9 @@ let wait_signal sigs =
   if !gotsig = 0 then Unix.sigsuspend sigs;
   List.iter2 Sys.set_signal sigs oldhdlrs;
   !gotsig
+
+(*
+let test s =
+  let ns = demand_portal s (fun s p -> `Test (s, p)) root_portal in
+  print_endline ns
+*)

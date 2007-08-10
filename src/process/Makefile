@@ -2,28 +2,51 @@ include ../../Makefile.template
 
 INCLUDES = -I ..
 
-COMMON = coordinator.cmo coordinator.cmx
-MODULES = cothread mutex condition event
-MODULESBYT = $(MODULES:%=%.cmo)
-MODULESNAT = $(MODULES:%=%.cmx)
-INTERFACE = $(MODULES:%=%.mli) $(MODULES:%=%.cmi)
+BACKEND = process
 
-%.mli: ../%.mli
-	@if [ ! -L $@ ]; then ln -s $< .; fi
-%.cmi: ../%.cmi
-	@if [ ! -L $@ ]; then ln -s $< .; fi
+AUXMOD = libext yor
+AUXMODBYT = $(AUXMOD:%=%.cmo)
+AUXMODNAT = $(AUXMOD:%=%.cmx)
+LOCALMOD = coordinator
+COMMONMOD = cothread mutex condition event
+COMMONMODNAT = $(COMMONMOD:%=%.cmx)
+COMMONMODINTFSRC = $(COMMONMOD:%=%.mli)
+COMMONMODINTFCOM = $(COMMONMOD:%=%.cmi)
+COMMONMODINTF = $(COMMONMODINTFSRC) $(COMMONMODINTFCOM)
+EXTRAMOD = thread
+EXTRAMODINTFCOM = $(EXTRAMOD:%=%.cmi)
+ALLMOD = $(LOCALMOD) $(COMMONMOD) $(EXTRAMOD)
+ALLMODBYT = $(ALLMOD:%=%.cmo)
+ALLMODNAT = $(ALLMOD:%=%.cmx)
 
+LIB = cothreads
+LIBBYT = $(LIB:%=%.cma)
+LIBNAT = $(LIB:%=%.cmxa)
+LIBNATA = $(LIB:%=%.a)
 
-all: $(COMMON) $(INTERFACE) $(MODULESBYT) $(MODULESNAT)
+INSTALLDIR = $(INSTALLLIBDIR)/$(BACKEND)
+INSTALLFILES = $(COMMONMODINTFCOM) $(EXTRAMODINTFCOM) $(LIBBYT) $(COMMONMODNAT) $(LIBNAT) $(LIBNATA)
 
-install:
-	$(MKDIR) $(INSTALLLIBDIR)/process
-	$(CP) ithread.cmo ithread.cmx $(INSTALLLIBDIR)/process
-	$(LN) $(INSTALLLIBDIR)/ithread.cmi $(INSTALLLIBDIR)/process/ithread.cmi
+$(LIBBYT): $(ALLMODBYT)
+	$(OCAMLC) -a -o $(LIBBYT) $(AUXMODBYT) $(ALLMODBYT)
+$(LIBNAT): $(ALLMODNAT)
+	$(OCAMLOPT) -a -o $(LIBNAT) $(AUXMODNAT) $(ALLMODNAT)
+
+$(COMMONMODINTF): %: ../%
+	@if [ ! -e $@ -a -e $< ]; then ln -s $< .; fi
+
+.PHONY: all install clean uninstall
+
+all: $(COMMONMODINTF) $(LIBBYT) $(LIBNAT)
+
+install: all
+	$(MKDIR) $(INSTALLDIR)
+	$(CP) $(INSTALLFILES) $(INSTALLDIR)
 
 clean: ocamlclean
-	$(RM) $(INTERFACE)
 
+uninstall:
+	$(RM) $(INSTALLDIR)
 
 
 

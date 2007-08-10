@@ -199,7 +199,6 @@ let new_thr () =
 let global_rem = ref []
 
 let remove_unreachable tid = 
-  Printf.printf "%d\n" (Tidtbl.fold (fun _ _ b -> succ b) !global_env 0);
   global_rem := tid :: !global_rem
 
 (* valid_write take a log and env, produce log_item list option:  None means

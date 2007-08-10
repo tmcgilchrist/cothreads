@@ -32,11 +32,11 @@ let produce i p d =
 
 let producer2 i =
   let p = ref 0 in
-  let d = Random.float 0.02 in
+  let d = Random.float 0.2 in
   try
   while true do
     produce i p d;
-    Cothread.delay (Random.float 0.02);
+    Cothread.delay (Random.float 0.2);
   done 
   with Unix.Unix_error (e,_,_) -> 
     debug (fun _ -> Printf.printf "Producer (%d) exit because of %s" i (Unix.error_message e))
@@ -44,7 +44,7 @@ let producer2 i =
 let wait2 i =
   Mutex.lock m ;
   debug (fun _ -> Printf.printf "Consumer (%d) take the lock\n" i);
-  while (let rr,_,_ = Unix.select [r] [] [] 0.0 in rr = []) do
+  while (let rr,_,_ = Cothread.select [r] [] [] 0.0 in rr = []) do
     debug (fun _ -> Printf.printf "Consumer (%d) is waiting (and relase the lock)\n" i);
     Condition.wait c m;
     debug (fun _ -> Printf.printf "Consumer (%d) wakes up\n" i);
@@ -61,7 +61,7 @@ let consumer2 i =
   while true do
     wait2 i;
     take2 i;
-    Cothread.delay (Random.float 0.02);
+    Cothread.delay (Random.float 0.2);
   done
   with Unix.Unix_error (e,_,_) -> 
     debug (fun _ -> Printf.printf "Consumer (%d) exit because of %s" i (Unix.error_message e)) ;;

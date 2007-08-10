@@ -1,24 +1,16 @@
 open Libext
 open Unix
 
-
 type thread = int
 
 (* We suppose the id limitation of threads is 16bit *)
 let bits_of_id = 16
-
 (* i.e. 0xFFFF *)
 let capability = 1 lsl bits_of_id - 1 
 
 let self () = Unix.getpid ()
-
 let id t = t land capability
-
 let thread id = assert (id <= capability); id 
-
-let exit () = Pervasives.exit 0
-
-let kill t = Unix.kill (id t) Sys.sigterm
 
 let file_perm = 0o600
 let dir_perm = 0o700
