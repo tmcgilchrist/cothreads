@@ -38,7 +38,7 @@ depend .depend:
 
 
 ocamlclean:
-	rm -f *.cmi *.cmo *.cmx *.cma *.cmxa *.a *.o *.annot .depend *~
+	rm -f *.cmi *.cmo *.cmx *.cma *.cmxa *.a *.o *.annot *.out .depend *~
 
 
 ## Common Routines

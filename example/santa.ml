@@ -2,7 +2,7 @@
    "Beautiful concurrency" paper. This is a _literal_ translation of the Haskell
    version (attached as comment a the end of this file)
 *)
-
+module Thread=Cothread
 open Stm
 
 type gate = {gt_num:int; gt_left: int tvar}

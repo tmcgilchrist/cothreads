@@ -1,16 +1,13 @@
 open Libext
 open Unix
 
-type thread = int
+type thread = { pid: int }
 
-(* We suppose the id limitation of threads is 16bit *)
-let bits_of_id = 16
-(* i.e. 0xFFFF *)
-let capability = 1 lsl bits_of_id - 1 
-
-let self () = Unix.getpid ()
-let id t = t land capability
-let thread id = assert (id <= capability); id 
+let self () = {pid = Unix.getpid ()}
+let parent () = {pid = Unix.getppid ()}
+let id t = t.pid
+let thread id = { pid = id }
+let signal s t = Unix.kill s (id t)
 
 let file_perm = 0o600
 let dir_perm = 0o700
@@ -18,26 +15,31 @@ let dir_perm = 0o700
 let work_dir_name = "cothread"
 let work_dir = 
   let name = Filename.concat Filename.temp_dir_name work_dir_name in
-  if not (Sys.file_exists name) then mkdir name dir_perm;
+  (try mkdir name dir_perm with Unix_error (EEXIST,_,_) -> ());
   name
 
-(* fresh_name ensure that there won't exist name confliction between running
-   processes as far as the process who created the name exists.
+(* fresh_number fresh_name ensure that there won't exist number/name
+   confliction between running processes.
 *)
-let fresh_name =
-  let tbl = Hashtbl.create 17 in
-  fun prefix ->
+let fresh_number =
+  let usable_size = Sys.word_size -2 in
+  let bits_of_id = 16 in (* Should be sufficient in most OS *)
+  let bits_of_num = usable_size - bits_of_id in
+  let counter = ref 0 in
+  fun () ->
     let self_id = id (self ()) in
-    let counter = 
-      try Hashtbl.find tbl (prefix, self_id)
-      with Not_found -> let r = ref 0 in Hashtbl.add tbl (prefix, self_id) r; r in
-    counter := !counter + 1 land max_int;
-    let file_name = Printf.sprintf "%s%04X%08X" prefix self_id !counter in
-    Filename.concat work_dir file_name
+    let id_part = bit_chop_to_n bits_of_id self_id in
+    let num_part = 
+      counter := bit_chop_to_n bits_of_num (!counter + 1);
+      !counter in
+    (id_part lsl bits_of_num) + num_part
+
+let fresh_name prefix =
+  let num = fresh_number () in
+  let file_name = Printf.sprintf "%s%0*X" prefix (Sys.word_size/4) num in
+  Filename.concat work_dir file_name
 
 let remove_exists name = try unlink name with Unix_error (ENOENT,_,_) -> ()
-
-module ThreadMap = Map.Make (struct type t = thread let compare = compare end)
 
 type 'a portal = string
 
@@ -100,6 +102,7 @@ let read_tunnel (r, _) =
   try Some (marshal_read r) with Unix_error ((EAGAIN|EWOULDBLOCK),_,_) -> None
 
 let write_tunnel v (_, w) = marshal_write v w
+
 
 let services : (string * Obj.t list) list ref = ref []
 
@@ -179,6 +182,8 @@ type root_msg =
 
 let root_portal: root_msg portal = create_portal ()
 
+module ThreadMap = Map.Make (struct type t = thread let compare = compare end)
+
 type thread_info = {parent: thread; wait_lst: bool portal list}
 
 let root_db = ref (ThreadMap.empty: thread_info ThreadMap.t)
@@ -187,15 +192,16 @@ exception Quit
 
 let exit_handler e cont = match e with Quit -> () | e -> raise e
 
+
 let root_func = function
-  | `Create (parent, son, p) -> 
-      root_db := ThreadMap.add son {parent = parent; wait_lst = []} !root_db;
+  | `Create (t', t, p) -> 
+      root_db := ThreadMap.add t {parent = t'; wait_lst = []} !root_db;
       write_portal true p 
-  | `Delete (self, p) -> 
-      let {wait_lst = wl} = ThreadMap.find self !root_db in
+  | `Delete (t, p) -> 
+      let {wait_lst = wl} = ThreadMap.find t !root_db in
       List.iter (write_portal true) wl; 
       write_portal true p;
-      root_db := ThreadMap.remove self !root_db;
+      root_db := ThreadMap.remove t !root_db;
       if ThreadMap.is_empty !root_db then raise Quit
   | `Wait (t, p) ->
       (try

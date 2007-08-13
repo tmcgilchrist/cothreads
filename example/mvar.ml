@@ -1,3 +1,4 @@
+module Thread=Cothread
 open Stm
 
 type 'a mvar = 'a option tvar
@@ -27,7 +28,7 @@ let producer mv =
 let consumer mv =
   while true do
     Printf.printf "Receive %d\n" (atom (take_mvar mv));
-    flush stdout
+    flush_all ();
   done
 
 let main () =

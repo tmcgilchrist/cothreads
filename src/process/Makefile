@@ -8,7 +8,7 @@ AUXMOD = libext yor
 AUXMODBYT = $(AUXMOD:%=%.cmo)
 AUXMODNAT = $(AUXMOD:%=%.cmx)
 LOCALMOD = coordinator
-COMMONMOD = cothread mutex condition event
+COMMONMOD = mutex condition event cothread
 COMMONMODNAT = $(COMMONMOD:%=%.cmx)
 COMMONMODINTFSRC = $(COMMONMOD:%=%.mli)
 COMMONMODINTFCOM = $(COMMONMOD:%=%.cmi)
@@ -20,7 +20,7 @@ ALLMOD = $(LOCALMOD) $(COMMONMOD) $(EXTRAMOD)
 ALLMODBYT = $(ALLMOD:%=%.cmo)
 ALLMODNAT = $(ALLMOD:%=%.cmx)
 
-LIB = cothreads
+LIB = threads cothreads
 LIBBYT = $(LIB:%=%.cma)
 LIBNAT = $(LIB:%=%.cmxa)
 LIBNATA = $(LIB:%=%.a)
@@ -28,10 +28,10 @@ LIBNATA = $(LIB:%=%.a)
 INSTALLDIR = $(INSTALLLIBDIR)/$(BACKEND)
 INSTALLFILES = $(COMMONMODINTFCOM) $(EXTRAMODINTFCOM) $(COMMONMODNAT) $(EXTRAMODNAT) $(LIBBYT) $(LIBNAT) $(LIBNATA)
 
-$(LIBBYT): $(ALLMODBYT)
-	$(OCAMLC) -a -o $(LIBBYT) $(AUXMODBYT) $(ALLMODBYT)
-$(LIBNAT): $(ALLMODNAT)
-	$(OCAMLOPT) -a -o $(LIBNAT) $(AUXMODNAT) $(ALLMODNAT)
+$(LIBBYT): %: $(ALLMODBYT)
+	$(OCAMLC) -a -o $@ $(AUXMODBYT) $(ALLMODBYT)
+$(LIBNAT): %: $(ALLMODNAT)
+	$(OCAMLOPT) -a -o $@ $(AUXMODNAT) $(ALLMODNAT)
 
 $(COMMONMODINTF): %: ../%
 	@if [ ! -e $@ -a -e $< ]; then ln -s $< .; fi

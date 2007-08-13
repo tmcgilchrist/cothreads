@@ -3,31 +3,32 @@ open Libext
 open Coordinator
 open Cothread
 
-type t = bool portal tunnel
 
-let master_lock = Mutex.create ()
+(* TODO: to reimplement with portal, tunnel is not persistent *)
 
-let create () = new_tunnel ()
+type t = bool portal tunnel * Mutex.t
 
-let wait cond mut =
+let create () = new_tunnel (), Mutex.create ()
+
+let wait (t,_) mut =
   let portal = create_portal () in
-  write_tunnel portal cond;
+  write_tunnel portal t;
   Mutex.unlock mut;
   if read_portal portal then (Mutex.lock mut; remove_portal portal)
   else assert false
 
-let rec signal cond =
-  Mutex.lock master_lock;
-  let result = read_tunnel cond in
-  Mutex.unlock master_lock;
+let rec signal (t, m) =
+  Mutex.lock m;
+  let result = read_tunnel t in
+  Mutex.unlock m;
   match result with Some portal -> write_portal true portal | None -> ()
 
-let broadcast cond =
+let broadcast (t, m) =
   let rec keep_read accu =
-    match read_tunnel cond with 
+    match read_tunnel t with 
     | Some portal -> keep_read (portal :: accu) 
     | None -> accu in
-  (* Mutex.lock master_lock; *)
+  Mutex.lock m;
   let wait_lst = keep_read [] in
-  (* Mutex.unlock master_lock; *)
+  Mutex.unlock m;
   List.iter (fun portal ->  write_portal true portal) (List.rev wait_lst)

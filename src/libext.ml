@@ -14,6 +14,9 @@ let list_find_split =
     | h :: t -> if test h then (acc, h, t) else find_rec test (h::acc) t in
   fun test l -> find_rec test [] l
 
+let bit_chop_to_n n x =
+  let capability = 1 lsl n - 1 in
+  x land capability
 
 (* Atomically write OCaml value to file_descr for both block/nonblock mode *) 
 let marshal_write =

@@ -13,7 +13,11 @@ val wait_timed_write : Unix.file_descr -> float -> bool
 val select :
   Unix.file_descr list -> Unix.file_descr list ->
   Unix.file_descr list -> float ->
-    Unix.file_descr list * Unix.file_descr list * Unix.file_descr list
+  Unix.file_descr list * Unix.file_descr list * Unix.file_descr list
 val wait_pid : int -> int * Unix.process_status
 val yield : unit -> unit
 val wait_signal : int list -> int
+
+(* Extended functions *)
+val spawn: ('a -> 'b) -> 'a -> 'b Event.event
+val spawnl: ('a -> 'b) -> 'a -> 'b Event.event

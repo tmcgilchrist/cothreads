@@ -3,7 +3,7 @@
    used. Launch it with [./phil n], where n is the number of philosophers and
    chopsticks.
 *)
-
+module Thread=Cothread
 open Stm
 
 

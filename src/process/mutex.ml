@@ -12,16 +12,7 @@ let lock_fd =
 
 type t = int (* The offset *)
 
-let create = 
-  (* bits num of a unsigned int *)
-  let usable_size = Sys.word_size - 2 in
-  (* according to capability of threads num *)
-  let bits_of_mutex = usable_size - bits_of_id in
-  let r = ref 0 in
-  fun () ->
-    let id_part = id (self ()) in
-    let mutex_part = r := (!r + 1) land (1 lsr bits_of_mutex - 1); !r in
-    id_part lsl bits_of_mutex + mutex_part
+let create = fresh_number
 
 let rec lock lk = 
   if lk <> lseek lock_fd lk SEEK_SET then assert false;

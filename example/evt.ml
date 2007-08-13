@@ -1,3 +1,4 @@
+module Thread=Cothread
 (* Test 1 *)
 let ch1 = Event.new_channel ()
 

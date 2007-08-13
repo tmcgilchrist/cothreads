@@ -1,25 +1,28 @@
 include ../Makefile.template
 
-%.vmth: %.ml
-	$(OCAMLC) -I +vmthreads -o $@ cothreads.cma $<
 
-%.nath: %.ml
-	$(OCAMLC) -I +threads -o $@ unix.cma cothreads.cma $<
+%.vmth: %.cmo
+	$(OCAMLC) -I +vmthreads -o $@ $(if $(findstring ray, $@), ray.cmo) cothreads.cma $^
 
-%.nath.opt: %.ml
-	$(OCAMLOPT) -I +threads -o $@ unix.cmxa cothreads.cmxa $<
+%.nath: %.cmo
+	$(OCAMLC) -I +threads -o $@ $(if $(findstring ray,$@), ray.cmo) unix.cma cothreads.cma $<
 
-%.proc: %.ml
-	$(OCAMLC) -I +process -o $@ unix.cma cothreads.cma $<
+%.nath.opt: %.cmx
+	$(OCAMLOPT) -I +threads -o $@ $(if $(findstring ray,$@), ray.cmx) unix.cmxa cothreads.cmxa $<
 
-%.proc.opt: %.ml
-	$(OCAMLOPT) -I +process -o $@ unix.cmxa cothreads.cmxa $<
+%.proc: %.cmo
+	$(OCAMLC) -I +process -o $@ $(if $(findstring ray,$@), ray.cmo) unix.cma cothreads.cma $<
 
-%.netw: %.ml
-	$(OCAMLC) -I +networker -o $@ unix.cma cothreads.cma $<
+%.proc.opt: %.cmx
+	$(OCAMLOPT) -I +process -o $@ $(if $(findstring ray,$@), ray.cmx) unix.cmxa cothreads.cmxa $<
 
-%.netw: %.ml
-	$(OCAMLOPT) -I +networker -o $@ unix.cmxa cothreads.cmxa $<
+%.netw: %.cmo
+	$(OCAMLC) -I +networker -o $@ $(if $(findstring ray,$@), ray.cmo) unix.cma cothreads.cma $<
+
+%.netw.opt: %.cmx
+	$(OCAMLOPT) -I +networker -o $@ $(if $(findstring ray,$@), ray.cmx) unix.cmxa cothreads.cmxa $<
+
+
 
 # Since prod_consum make use of some aux libraries we developed during the implementation of 
 # the process backend. We handle it specially. We should reimplement it with events. This test
@@ -51,13 +54,13 @@ prod_consum.nath.opt: prod_consum.cmx
 prod_consum.proc.opt: prod_consum.cmx
 	$(OCAMLOPT) -I +process -o $@ unix.cmxa cothreads.cmxa $<
 
-THRTEST = coth evt lock 
-STMONLY = cmt phil santa test  #require STM implementation, not yet available for process
+THRTEST = coth evt lock ray_col ray_nocol
+STMONLY = mvar merge mcast phil santa test  #require STM implementation, not yet available for process
 ALLTEST = $(THRTEST) $(STMONLY)
 EXTRATEST = prod_consum
 
-all:$(ALLTEST:%=%.vmth) $(ALLTEST:%=%.nath) $(ALLTEST:%=%.nath.opt) $(THRTEST:%=%.proc) $(THRTEST:%=%.proc.opt) $(EXTRATEST:%=%.nath) $(EXTRATEST:%=%.nath.opt)	$(EXTRATEST:%=%.proc) $(EXTRATEST:%=%.proc.opt)
+all: $(ALLTEST:%=%.vmth) $(ALLTEST:%=%.nath) $(ALLTEST:%=%.nath.opt) $(THRTEST:%=%.proc) $(THRTEST:%=%.proc.opt) $(EXTRATEST:%=%.nath) $(EXTRATEST:%=%.nath.opt)	$(EXTRATEST:%=%.proc) $(EXTRATEST:%=%.proc.opt)
 
 clean: ocamlclean
-	$(RM) *.vmth *.nath *.proc *.netw *.opt
+	$(RM) *.vmth *.nath *.proc *.netw *.opt *.pgm
 
