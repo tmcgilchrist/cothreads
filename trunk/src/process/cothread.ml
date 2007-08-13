@@ -7,57 +7,60 @@ type t = thread
 let self = self
 let id = id
 let exit () = Pervasives.exit 0
+let kill = signal Sys.sigterm 
 
-let execute f x =
-  Sys.set_signal Sys.sigterm (Sys.Signal_handle (fun _ ->  exit ()));
-  let exit_code = 
-    try ignore (f x); 0 
-    with e -> (prerr_endline (Printexc.to_string e); 1) in
-  Pervasives.exit exit_code
+let rec unreg t = 
+  let flag = demand_portal t (fun x p -> `Delete (x, p)) root_portal in
+  if not flag then unreg t
 
-let rec unreg () = 
-  let flag = demand_portal (self ()) (fun x p -> `Delete (x, p)) root_portal in
-  if not flag then unreg ()
+let rec reg t' t =
+  let flag = demand_portal t (fun t p -> `Create (t', t, p)) root_portal in 
+  if not flag then reg t' t
 
-let rec reg ppid pid =
-  let flag = demand_portal (ppid, pid) 
-    (fun (ppid,pid) p -> `Create (ppid, pid, p)) root_portal in 
-  if flag then () else reg ppid pid
+let prefix_sig_handle s f =
+  let temp_signal_handle = ref Sys.Signal_default in
+  temp_signal_handle :=
+    Sys.signal s
+      (Sys.Signal_handle 
+         (fun _ -> 
+            f ();
+            Sys.set_signal s !temp_signal_handle;
+            signal s (self ())))
 
 let inited = ref false
 
 let rec init () =
   assert (not !inited);
   inited := true; 
-  let root = self () in
   match fork () with
-  | -1 -> inited := false; init ()
-  | 0 -> at_exit unreg; reg root (self ())
-  | pid -> execute run_services ()
+  | 0 -> 
+      reg (parent ()) (self ());
+      prefix_sig_handle Sys.sigterm (fun _ -> unreg (self ()));
+      at_exit (fun () -> unreg (self ()))
+  | pid -> 
+      run_services ();
+      exit ()
 
-let rec create f x =
+let create f x =
   flush_all ();
-  Gc.full_major ();
   if not !inited then init ();
-  let p = create_portal () in
   match fork () with
-  | -1 -> create f x
-  | 0 -> if read_portal p then (remove_portal p; execute f x) else (remove_portal p; assert false)
-  | pid ->
-      let son = thread pid in
-      reg (self ()) son;
-      write_portal true p;
-      son
-
-let kill t = Unix.kill (id t) Sys.sigterm
-
-let delay d = ignore (select [] [] [] d)
+  | 0 -> 
+      let self = self () in
+      let parent = parent () in
+      reg parent self;
+      let error = try ignore (f x); None with e -> Some e in
+      (match error with None -> exit () | Some e -> unreg self; raise e)
+  | pid -> 
+      thread pid
 
 let join t = 
   let success = demand_portal t (fun t p -> `Wait (t, p)) root_portal in
   if not success then assert false
 
 let select = Unix.select
+
+let delay d = ignore (select [] [] [] d)
 
 let wait_read fd = ignore (select [fd] [] [] (-1.))
 let wait_write fd = ignore (select [fd] [] [] (-1.))
@@ -80,6 +83,30 @@ let wait_signal sigs =
   if !gotsig = 0 then Unix.sigsuspend sigs;
   List.iter2 Sys.set_signal sigs oldhdlrs;
   !gotsig
+
+let spawn f x = 
+  let ch = Event.new_channel () in
+  let result = ref `Unknown in
+  let thread_fun () =
+    let res = try `Result (f x) with e -> `Exn e in
+    Event.sync (Event.send ch res) in
+  ignore (create thread_fun ());
+  let rec launch () = match !result with 
+    | `Result v -> Event.always v
+    | `Exn e -> raise e
+    | `Unknown -> 
+        Event.wrap (Event.receive ch) 
+          (fun res -> result:= res; Event.sync (launch ())) in
+  Event.guard launch
+
+let spawnl f x =
+  let ch = Event.new_channel () in
+  let thread_fun () = Event.sync (Event.send ch (f x)) in
+  let launch () = 
+    let worker = create thread_fun () in
+    Event.wrap_abort (Event.receive ch) (fun () -> kill worker) in
+  Event.guard launch
+
 
 (*
 let test s =

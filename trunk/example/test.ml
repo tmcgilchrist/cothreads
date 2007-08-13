@@ -1,5 +1,5 @@
 (* Simple example without much meanings, for test purpose *)
-
+module Thread=Cothread
 open Stm;;
 
 let rec accu x = if x = 0 then 0 else x + (accu (pred x))

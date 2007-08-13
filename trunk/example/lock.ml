@@ -1,3 +1,4 @@
+module Thread=Cothread
 open Thread
 
 let lk1 = Mutex.create ()
