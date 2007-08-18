@@ -18,8 +18,9 @@ let put_mvar mv v =
 
 let producer n mv =
   while true do
-    Thread.delay (Random.float 0.2);
-    atom (put_mvar mv n)
+    (* Thread.delay (Random.float 0.2); *)
+    atom (put_mvar mv n);
+    Gc.major ()
   done
 
 let merge mv1 mv2 =
@@ -27,6 +28,7 @@ let merge mv1 mv2 =
     Printf.printf "Receive signal from %d\n" 
       (atom (or_else (take_mvar mv1) (take_mvar mv2)));
       flush_all ();
+      Gc.major ();
   done
 
 let main () =

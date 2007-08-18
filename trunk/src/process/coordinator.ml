@@ -57,7 +57,7 @@ let read_portal (p: 'a portal) : 'a  =
   close fd;
   v
 
-let poll_read_portal (p: 'a portal) : 'a =
+let poll_read_portal p =
   let fd = openfile p [O_RDONLY; O_NONBLOCK] file_perm in
   let data = 
     try Some (marshal_read fd)
@@ -75,9 +75,9 @@ let poll_write_portal (x : 'a) (p: 'a portal) =
   try marshal_write x fd; Some (fun () -> close fd)
   with Unix_error ((EAGAIN|EWOULDBLOCK),_,_) -> None
 
-let demand_portal (v: 'a) (w: 'a -> 'b portal -> 'c) (p: 'c portal) : 'b =
+let demand_portal f p =
   let tp = create_portal () in
-  let pkg = w v tp in
+  let pkg = f tp in
   write_portal pkg p;
   let ack = read_portal tp in
   remove_portal tp;
@@ -135,13 +135,23 @@ let sub_serv p f1 f2 =
   services := services'
 
 
-let exn_handlers: (exn -> (unit -> 'a) -> 'a) list ref = ref []
+let exn_handlers: (exn -> (float -> 'a) -> 'a) list ref = ref []
 
 let new_handler f = exn_handlers := f :: !exn_handlers
 
 let rec handle_all e cont handlers = match handlers with
   | [] -> raise e
   | h :: t -> try h e cont with _ -> handle_all e cont t
+
+
+module ThreadMap = Map_Make (struct type t = thread let compare = compare end)
+module ThreadSet = Set.Make (struct type t = thread let compare = compare end)
+
+type thread_info = {parent: thread; wait_lst: bool portal list}
+
+let root_db = ref (ThreadMap.empty: thread_info ThreadMap.t)
+
+let inited = ref false
 
 let run_services () =
   let serv_conf = List.map
@@ -151,10 +161,11 @@ let run_services () =
     ) (List.rev !services) in
   let fds , _ = List.split serv_conf in
   let exn_handlers = List.rev !exn_handlers in
-  let rec run () =
-    let ready,_,_ = select fds [] [] (-1.) in
+  let exns = ref [] in
+  let rec run timeout =
+    let ready,_,_ = select fds [] [] timeout in
     match ready with
-    | [] -> assert false
+    | [] -> ()
     | h :: _ -> 
         let excep = try 
           let v = marshal_read h in
@@ -162,13 +173,17 @@ let run_services () =
           None
         with e -> Some e in
         match excep with
-        | None -> run () 
+        | None -> 
+            let timeout = if ThreadMap.is_empty !root_db then 0. else (-1.) in
+            run timeout
         | Some e -> handle_all e run exn_handlers in
-  let error = try run (); None with e -> Some e in
+  (try run (-1.) with e -> 
+     exns := e :: !exns;
+     if ThreadMap.is_empty !root_db then ()
+     else (ThreadMap.iter (fun thr _ -> signal Sys.sigterm thr) !root_db; run (-1.)));
   List.iter close fds;
   List.iter (fun (p, _) -> remove_portal p) !services;
-  match error with None -> () | Some e -> raise e
-
+  List.iter raise !exns
 
 
 (* Root service begins *)
@@ -182,16 +197,9 @@ type root_msg =
 
 let root_portal: root_msg portal = create_portal ()
 
-module ThreadMap = Map.Make (struct type t = thread let compare = compare end)
-
-type thread_info = {parent: thread; wait_lst: bool portal list}
-
-let root_db = ref (ThreadMap.empty: thread_info ThreadMap.t)
-
 exception Quit
 
 let exit_handler e cont = match e with Quit -> () | e -> raise e
-
 
 let root_func = function
   | `Create (t', t, p) -> 
@@ -210,6 +218,34 @@ let root_func = function
          root_db := ThreadMap.add t new_info !root_db
        with Not_found -> write_portal true p)
   | `Test (str, p) -> write_portal ("Root got your msg "^str) p
+
+let rec unreg t = 
+  let flag = demand_portal (fun p -> `Delete (t, p)) root_portal in
+  if not flag then unreg t
+
+let rec reg t' t =
+  let flag = demand_portal (fun p -> `Create (t', t, p)) root_portal in 
+  if not flag then reg t' t
+
+let prefix_sig_handle s f =
+  let old_handle = Sys.signal s Sys.Signal_default in
+  let new_handle = Sys.Signal_handle 
+    (fun _ -> f (); Sys.set_signal s old_handle; signal s (self ())) in
+  Sys.set_signal s new_handle
+
+let rec init () =
+  assert (not !inited);
+  (inited := true; 
+   match fork () with
+   | 0 -> 
+       reg (parent ()) (self ());
+       at_exit (fun () -> unreg (self ()));
+       prefix_sig_handle Sys.sigterm (fun _ -> unreg (self ()));
+       Sys.set_signal Sys.sigchld Sys.Signal_ignore
+   | pid -> 
+       run_services ();
+       exit 0
+  )
 
 
 let _ = new_serv root_portal root_func

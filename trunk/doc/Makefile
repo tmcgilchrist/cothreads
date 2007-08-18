@@ -10,4 +10,4 @@ doc:
 	$(OCAMLDOC) -man -d man -man-mini $(TOPDIR)/$(SOURCEDIR)/*.mli
 
 clean: 
-	$(RM) html man *~
+	$(RM) html man *~ .depend

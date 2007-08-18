@@ -1,7 +1,6 @@
 open Unix
 open Libext
 open Coordinator
-open Cothread
 
 let lock_fd = 
   let lock_name = fresh_name "_mutex" in

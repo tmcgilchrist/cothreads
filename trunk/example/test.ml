@@ -17,6 +17,6 @@ let simple () =
   let thr_array = 
     Array.init 500 (fun x -> Thread.create thread_fun (x+1)) in
   Array.iter Thread.join thr_array;
-  Printf.printf "Final result: %d\n" (atom (read_tvar tv))
+  Printf.printf "Final result: %d\n" (atom (read_tvar tv)); flush_all ()
 
 let _ = simple ()

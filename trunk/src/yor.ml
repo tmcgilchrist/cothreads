@@ -1,3 +1,6 @@
+(* Now very dirty, specific to the simplest types we'll use in this project,
+   to be cleaned up and generalised *)
+
 open Obj;;
 
 let tag_delim = 246
@@ -54,60 +57,76 @@ and parse_clos obj =
 
 let parse x = parse_obj (repr x)
 
+(* We should really rewrite it with Format *)
+let dump x = 
+  let tree = parse x in
+  let rec output = function
+    | `Closure (codeptr, olist) -> 
+        (Printf.sprintf "<fun:%d> (\n" (obj codeptr))
+        ^ (String.concat "\n" (List.map output olist))
+        ^ ")\n"
+    | `Double f -> string_of_float f
+    | `Force o -> "lazy (" ^ (output o) ^ ")"
+    | `Double_array fa -> 
+        let fl = Array.to_list fa in
+        "[|" ^ (String.concat "; " (List.map string_of_float fl)) ^ "|]"
+    | `Int i -> string_of_int i
+    | `Lazy cl -> "<lazy>"
+    | `Object (cl, i, ol) ->
+        (Printf.sprintf "<obj:%d-%d> (\n" (obj cl) i)
+        ^ (String.concat "\n" (List.map output ol))
+        ^ ")\n"
+    | `String s -> "\"" ^ s ^ "\""
+    | `Tuple ol ->
+        "(" ^ (String.concat ", " (List.map output ol)) ^ ")" in
+  output tree
+
+let print x = print_endline (dump x)
 
 let rec list_find_app f = function
   | [] -> None
   | h::t -> match f h with Some _ as v -> v | None -> list_find_app f t
 
-(* Prefix, depth first search *)
-let find_obj prop obj =
+(* all prefix, depth first visit *)
+
+let find prop v =
+  let obj = repr v in
   let already_seen = ref [] in
   let rec find_aux o = 
     if List.memq o !already_seen then None
     else if prop o then Some o 
     else
       (already_seen := o :: !already_seen;
-       match tag o with
-       | x when List.mem x
-           [int_tag; string_tag; double_tag; double_array_tag] -> None
-       | x when (x < tag_delim 
-                 || List.mem x [closure_tag; object_tag; lazy_tag; forward_tag]) ->
-              list_find_app find_aux (fields_from 0 o)
-       | x -> prerr_int x; None
+       if tag o < no_scan_tag then 
+         list_find_app find_aux (fields_from 0 o)
+       else None
       ) in
   find_aux obj
 
-let refed_by a b =  
-  match find_obj ((==) (repr a)) (repr b) with
-  | None -> false | Some _ -> true
-
-(* Prefix, depth first travel. It's a destructive operation*)
-let subst_obj sf obj =
+let iter f v =
+  let obj = repr v in
   let already_seen = ref [] in
-   let rec subst_aux o =
-    if List.memq o !already_seen then o
-    else match (sf o) with
-    | Some x -> x 
-    | None -> 
-        (already_seen := o :: !already_seen;
-         match tag o with
-         | x when List.mem x 
-             [int_tag; string_tag; double_tag; double_array_tag] -> o
-         | x when (x < tag_delim || List.mem x
-                     [closure_tag; object_tag; lazy_tag; forward_tag]) ->
-             for i = 0 to size o - 1 do 
-               let old_field = field o i in
-               let new_field = subst_aux old_field in
-               if old_field != new_field then set_field o i new_field
-             done;
-             o
-         | x -> prerr_int x; o
-        ) in
-  subst_aux obj
+  let rec iter_aux o =
+    if not (List.memq o !already_seen) then
+      (f o;
+       already_seen := o :: !already_seen;
+       if tag o < no_scan_tag then List.iter iter_aux (fields_from 0 o)) in
+  iter_aux obj
 
-let subst ((a: 'a), (a': 'a)) (b: 'b) : 'b =
-  let obj_a = repr a in
-  let obj_a' = repr a' in
-  let sf o = if o == obj_a || o = obj_a then Some obj_a' else None in
-  obj (subst_obj sf (repr b))
+let refed_by eq a b = 
+  match find (eq (repr a)) b with None -> false | Some _ -> true
 
+(* The reason of return a 'a value rather than a unit is that, when the whole b is
+   eq to a, we have no way to *physically* substitute it with 'a. By return a
+   'a value, we ensure the a in every parts of b, ie include b itself, is
+   substitued in the _final result_. Still, please remember, the operation is
+   destructive in common cases, not functional. *)
+let subst eq ((a: 'a), (a': 'a)) b =
+  let oa = repr a and ob = repr b and oa' = repr a' in
+  let subst_aux o = 
+    if tag o < no_scan_tag then
+      for i = 0 to size o do
+        if eq oa (field o i) then set_field o i oa'
+      done in
+  if eq oa ob then (obj oa')
+  else subst_aux ob; b

@@ -54,12 +54,10 @@ prod_consum.nath.opt: prod_consum.cmx
 prod_consum.proc.opt: prod_consum.cmx
 	$(OCAMLOPT) -I +process -o $@ unix.cmxa cothreads.cmxa $<
 
-THRTEST = coth evt lock ray_col ray_nocol
-STMONLY = mvar merge mcast phil santa test  #require STM implementation, not yet available for process
-ALLTEST = $(THRTEST) $(STMONLY)
+ALLTEST = coth evt lock ray_col ray_nocol test mvar merge mcast phil santa
 EXTRATEST = prod_consum
 
-all: $(ALLTEST:%=%.vmth) $(ALLTEST:%=%.nath) $(ALLTEST:%=%.nath.opt) $(THRTEST:%=%.proc) $(THRTEST:%=%.proc.opt) $(EXTRATEST:%=%.nath) $(EXTRATEST:%=%.nath.opt)	$(EXTRATEST:%=%.proc) $(EXTRATEST:%=%.proc.opt)
+all: $(ALLTEST:%=%.vmth) $(ALLTEST:%=%.nath) $(ALLTEST:%=%.nath.opt) $(ALLTEST:%=%.proc) $(ALLTEST:%=%.proc.opt) $(EXTRATEST:%=%.nath) $(EXTRATEST:%=%.nath.opt)	$(EXTRATEST:%=%.proc) $(EXTRATEST:%=%.proc.opt)
 
 clean: ocamlclean
 	$(RM) *.vmth *.nath *.proc *.netw *.opt *.pgm

@@ -25,7 +25,7 @@ let write_mchan mc v =
 let producer mc =
   let c = ref 0 in
   while true do
-    Thread.delay (Random.float 0.2);
+    (* Thread.delay (Random.float 0.2); *) Gc.full_major ();
     atom (write_mchan mc !c);
     incr c
   done
@@ -33,7 +33,7 @@ let producer mc =
 let consumer n mc =
   let p = atom (new_port mc) in
   while true do
-    Thread.delay (Random.float 0.2);
+    (* Thread.delay (Random.float 0.2); *) Gc.full_major ();
     Printf.printf "%d receives %d\n" n (atom (read_port p));
     flush_all ();
   done
