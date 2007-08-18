@@ -20,7 +20,7 @@ let put_mvar mv v =
 let producer mv =
   let c = ref 0 in
   while true do
-    Thread.delay (Random.float 0.2);
+    Thread.delay (Random.float 0.05);
     atom (put_mvar mv !c);
     incr c
   done

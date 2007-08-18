@@ -9,53 +9,26 @@ let id = id
 let exit () = Pervasives.exit 0
 let kill = signal Sys.sigterm 
 
-let rec unreg t = 
-  let flag = demand_portal t (fun x p -> `Delete (x, p)) root_portal in
-  if not flag then unreg t
-
-let rec reg t' t =
-  let flag = demand_portal t (fun t p -> `Create (t', t, p)) root_portal in 
-  if not flag then reg t' t
-
-let prefix_sig_handle s f =
-  let temp_signal_handle = ref Sys.Signal_default in
-  temp_signal_handle :=
-    Sys.signal s
-      (Sys.Signal_handle 
-         (fun _ -> 
-            f ();
-            Sys.set_signal s !temp_signal_handle;
-            signal s (self ())))
-
-let inited = ref false
-
-let rec init () =
-  assert (not !inited);
-  inited := true; 
-  match fork () with
-  | 0 -> 
-      reg (parent ()) (self ());
-      prefix_sig_handle Sys.sigterm (fun _ -> unreg (self ()));
-      at_exit (fun () -> unreg (self ()))
-  | pid -> 
-      run_services ();
-      exit ()
-
 let create f x =
   flush_all ();
   if not !inited then init ();
+  let m = Mutex.create () in Mutex.lock m;
   match fork () with
   | 0 -> 
-      let self = self () in
-      let parent = parent () in
-      reg parent self;
+      Mutex.lock m; Mutex.unlock m;
+      ignore (f x); exit ()
+      (*
       let error = try ignore (f x); None with e -> Some e in
-      (match error with None -> exit () | Some e -> unreg self; raise e)
+      (match error with None -> exit () | Some e -> (* unreg self; *) raise e)
+      *)
   | pid -> 
-      thread pid
+      let son = thread pid in
+      reg (self ()) son;
+      Mutex.unlock m;
+      son
 
 let join t = 
-  let success = demand_portal t (fun t p -> `Wait (t, p)) root_portal in
+  let success = demand_portal (fun p -> `Wait (t, p)) root_portal in
   if not success then assert false
 
 let select = Unix.select

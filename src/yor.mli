@@ -16,14 +16,9 @@
 (*                                                                     *)
 (***********************************************************************)
 
-(** Helper functions dealing with internal representation of OCaml values,
-    still ALPHA!!!
-*)
-
 
 (** {6 YOR type} *)
 
-(** a representation format of parsed OCaml value *)
 type pobj =
     [ `Closure of closure
     | `Double of float
@@ -41,11 +36,11 @@ and clobj = Obj.t
 
 (** {6 YOR operations} *)
 
-(** parse any OCaml value to its corresponding pobj representation *)
 val parse : 'a -> pobj
+val dump : 'a -> string
+val print: 'a -> unit
+val find: (Obj.t -> bool) -> 'a -> Obj.t option
+val iter: (Obj.t -> unit) -> 'a -> unit
+val refed_by : (Obj.t -> Obj.t -> bool) -> 'a -> 'b -> bool
+val subst : (Obj.t -> Obj.t -> bool) -> 'a * 'a -> 'b -> 'b
 
-(** [refed_by e x] test whether [e] is physically referenced by [x] *)
-val refed_by : 'a -> 'b -> bool
-
-(** [subst (e, e') x] substitue any occurience of [e] inside [x] with [e'] *)
-val subst : 'a * 'a -> 'b -> 'b

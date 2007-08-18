@@ -45,12 +45,12 @@ let await_group {gp_num = num; gp_left = left} =
 
 let rec helper gp id task =
   let in_gate, out_gate = join_group gp in
-  use_gate in_gate; task id; use_gate out_gate;
+  use_gate in_gate; task id; flush stdout; use_gate out_gate;
   Thread.delay (Random.float 1.0);
   helper gp id task
 
 let run task (in_gt, out_gt) =  
-  Printf.printf "Ho! Ho! Ho! let's %s\n" task;
+  Printf.printf "Ho! Ho! Ho! let's %s\n" task; flush stdout;
   operate_gate in_gt;
   operate_gate out_gt
 

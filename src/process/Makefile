@@ -8,7 +8,7 @@ AUXMOD = libext yor
 AUXMODBYT = $(AUXMOD:%=%.cmo)
 AUXMODNAT = $(AUXMOD:%=%.cmx)
 LOCALMOD = coordinator
-COMMONMOD = mutex condition event cothread
+COMMONMOD = mutex condition event cothread stm
 COMMONMODNAT = $(COMMONMOD:%=%.cmx)
 COMMONMODINTFSRC = $(COMMONMOD:%=%.mli)
 COMMONMODINTFCOM = $(COMMONMOD:%=%.cmi)
