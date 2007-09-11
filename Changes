@@ -1,4 +1,11 @@
+CoThreads 0.10
+---------------
+
+	* STMlib now retarget as coThreads, a full-fledged concurrent/parallel programming library for OCaml
+	* (vm)threads/process engines done, with components (co)thread, mutex, condition, event, stm
+
+
 STM library for OCaml 0.01
 --------------------------
 
- * Initial version
+	* Initial version
