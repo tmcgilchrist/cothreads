@@ -1,6 +1,6 @@
 =============================================================================
 
-                     STM library for OCaml                               
+                        OCaml coThreads
 
 
             (C) 2007 by Zheng Li (li@pps.jussieu.fr)                   
@@ -9,90 +9,35 @@
 
 
 
-DESCRIPTION
-===========
+== Description ==
 
-This is a user-space implementation of STM (Software Transactional Memory)
-library for OCaml. It's mainly inspired by the STM library of Haskell (you may
-want to read some of the references in the REFERENCE section), with some
-exceptions due to the different natures of languages and the different
-strategies of implementation.
+coThreads is a [[doc/concurrency.and.parallelism|concurrent/parallel]] programming library for OCaml. It enhances the Threads library of the standard OCaml distribution in the two dimensions:
 
-  - This library is a user level implementation, whereas the Haskell version is
-    based on primitives built into the runtime. 
-
-  - This library is purely an add-on to the already existed concurrent library
-    of standard OCaml: threads, processes (TODO) and network programs
-    (TODO). I.e. you can still program your concurrent applications with all
-    facilities already exist in OCaml (such as Thread.create or Unix.fork to
-    launch new thread/process respectively), but with the functions from this
-    library you may transactionally read/write shared data instead of using
-    locks or messages (and you may mix them if you really want).
-
-  - There are subtle differences on the signatures and semantics of some
-    specific functions between this library and the Haskell version. They are
-    documented in the library manual.
-
-Currently only the threads back-end is provided as a proof of concept. Other
-backends, which share the exact interface, will come out some time later. With
-the help of iThread module (a minimal common interface for launching and
-manipulating threads/process/network programs with uniformed functions, having
-a naive implemented and not publicly available at this moment), you will be
-able to write a single program (.ml) and compile once (.cmo), but link with
-different backends to get different excutables based on different execution
-model (threaded, multi-process and networked).
+ * coThreads implements the same API of the standard Threads library as different execution engines (process, netwoker(TODO)), so that a single copy of source code can be compiled and deployed to different environments without modification
+ * coThreads is also a super set of the standard Threads library, with extra components (STM etc.), functions (spawn etc.), and features (object-level compatibility etc.) 
 
 
+=== Features ====
 
-REFERENCE
-=========
+The design of coThreads brings several advantages:
 
-The following literature is helpful on understanding STM. The first one is
-especially recommended from a programmer's (library user) point of view.
+==== Powerfulness ====
+ * The process engine can give you real speedup on a multi-processor machine, the networker engine (TODO) will give you both speedup and scalability.
+ * Combining the original components from the Threads library and the new added ones, coThreads is a full-fledged toolbox covering two main concurrent programming [[doc/paradigm|paradigms]], namely shared-memory and message passing, with both high-level and low-level constructors. 
+ * All constructors (e.g. threads, mutex, condition, event, channel, tvar etc.) can be manipulated as first class values, they can even be communicated and shared between independent threads through channels etc..
 
- - Beautiful concurrency: a practical illustration of STM
-  <http://research.microsoft.com/~simonpj/papers/stm/#beautiful>
-    
- - STM paper: rigorous semantics definition of STM in Haskell
-  <http://research.microsoft.com/~simonpj/papers/stm/#composble> 
+==== Compatibility ====
+ * Fully [[doc/compatibility|compatibility]] with the original Threads library (systhreads and vmthreads), so that you can now deploy your legacy code to new environment for free --- without modifying source code, without learning anything new.
+ * Both source-level and object-level compatibility among different execution engines, so that you can keep a single copy of source code and a single copy of objects files.
 
- - Haskell wiki page on STM
-   <http://www.haskell.org/haskellwiki/Software_transactional_memory> 
-
-
-
-CONTENTS
-========
-
-  Changes               what's new with each release
-  INSTALL               instructions for installation
-  LICENSE               license and copyright notice
-  Makefile              main Makefile
-  Makefile.template     common configuration shared by all makefiles
-  README                this file
-  TODO                  the next step
-  VERSION               version number
-  doc/                  working directory to generate documentation
-  example/              some examples using STM
-  src/                  source directory of common interface file
-  src/threads/          source directory of threads back-end
-  src/vmthreads/        source directory of vmthreads back-end 
-  src/process/          source directory of process back-end (empty)
-  src/network/          source directory of network program back-end (empty)
+==== Convenience ====
+ * The full library is implemented in user-space, no modification to the OCaml compiler and runtime, so that you can [[doc/usage|use]] it as a set of plain modules.
+ * Switching engines is as easy as changing the include paths of compilation, and it's quite easy to automate the building process over a set of engines (e.g. with lines of pattern rules in your Makefile) 
 
 
+== More ==
 
-COPYRIGHT
-=========
-
-See file ./LICENCE
-
-
-
-INSTALLATION
-============
-
-See file ./INSTALL for installation instructions 
+Everything at http://cothreads.sf.net
 
 
 

@@ -1,5 +1,8 @@
 TODO:
 
-    * two other back-ends for process and networked programs
-    * integration test with iThread library
+    * the networker engine
+    * enhanced event module
+    * future module
     * more examples
+    * tutorial
+
