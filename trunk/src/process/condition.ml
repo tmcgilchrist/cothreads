@@ -1,8 +1,4 @@
-open Unix
-open Libext
 open Coordinator
-open Cothread
-
 
 (* TODO: to reimplement with portal, tunnel is not persistent *)
 

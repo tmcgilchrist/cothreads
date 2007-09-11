@@ -1,5 +1,5 @@
-open Libext
 open Coordinator
+open Libext
 
 let stm_magic = "STM2007MTS"
 
@@ -67,7 +67,7 @@ let bind t f = fun () -> f (t ()) ()
 let ( >>= ) = bind
 let ( >> ) s1 s2 = s1 >>= fun _ -> s2
 
-let reference v = TvSet.filter (fun x -> Yor.refed_by (=) x v)
+let reference v = TvSet.filter (fun x -> obj_refed_by (=) x v)
 
 let tvar v =
   if (not !inited) then init ();
@@ -165,7 +165,7 @@ let or_else t1 t2 = fun () ->
 let dirtirise v susp = 
   let mark tv = 
     let val_tv = val_of_var tv in
-    Yor.iter 
+    obj_iter 
       (fun o -> 
          if o = val_tv then 
            (state.dirty <- TvSet.add tv state.dirty; Gc.finalise finaliser o)

@@ -20,19 +20,19 @@
 *)
 
 
-(* Lock mechanics *)
+(** Lock mechanics *)
 
 (* The commit and read is a classical reader-writer problem. We make our choice
    for the writer's preference, because the readings before writings are
    possibly turn out to be invalid in the future and cause unnecessary
    computation. Here we use single lock, a more elegant-in-theory solution
-   would give each tvar a lock, however there are few chances it can speedup
-   (esp. in the case of OCaml) and brings much more dangerous on deadlock and
-   the complexity of solving them.
+   would give each tvar a lock, however there are very few chances it can
+   speedup (esp. in the presense of OCaml'a master lock) and brings much more
+   dangerous on deadlock and the complexity of solving them.
 *)
 let lock = Mutex.create ()
 
-let writing = ref false
+let writing = ref None
 and readers = ref 0 (* the working readers *)
 and writers = ref 0 (* the waiting writers *)
 
@@ -42,24 +42,31 @@ and ok_to_write = Condition.create ()
 
 (* Reader and Writer routines *)
 let start_write () = 
+  let my_id = Thread.id (Thread.self ()) in
   Mutex.lock lock;
-  if !readers > 0 || !writing || !writers > 0 then
-    begin 
-      incr writers; 
-      Condition.wait ok_to_write lock; 
-      decr writers ;
-    end;
-  writing := true;
+  (match !writing with
+   | Some (id, num) when id = my_id -> writing := Some (id, num + 1)
+   | None when !readers = 0 && !writers = 0 -> writing := Some (my_id, 1)
+   | _ ->
+       incr writers; 
+       Condition.wait ok_to_write lock; 
+       decr writers ;
+       writing := Some (my_id, 1));
   Mutex.unlock lock
 and end_write () =
   Mutex.lock lock;
-  writing := false;
-  if !writers > 0 then Condition.signal ok_to_write
-  else Condition.broadcast ok_to_read;
-  Mutex.unlock lock
+  match !writing with 
+  | None -> assert false 
+  | Some (id, n) ->
+      if n = 1 then 
+        (writing := None;
+         if !writers > 0 then Condition.signal ok_to_write
+         else Condition.broadcast ok_to_read)
+      else writing := Some (id, pred n);
+      Mutex.unlock lock
 and start_read () =
   Mutex.lock lock;
-  while !writing || !writers > 0 do
+  while !writing <> None || !writers > 0 do
     Condition.wait ok_to_read lock
   done;
   incr readers;
@@ -70,7 +77,6 @@ and end_read () =
   if !readers = 0 then Condition.signal ok_to_write;
   Mutex.unlock lock
 
-(* We should improve this to allow nested reader/writer *)
 let reader f x =
   start_read (); 
   try let res = f x in end_read (); res 
@@ -81,71 +87,95 @@ and writer f x =
   with e -> end_write (); raise e
 
 
+(** Internal representation of tvar, log, env (bindings) and thread info *)
 
+(* Magic number *)
+let stm_magic = 20072007
 
-
-(* Internal representation of tvar, log, env (bindings) and thread info *)
-
-(* tid = thread_id * local_id *)
-type tid = int * int and version = int and value = Obj.t * string
-
-(* We need both Obj and Marshal. Marshal is used to isolate side-effect so
-   that tvar won't change through other means except tvar operation, however it
-   breaks the referencing relation between values, so the former
-   is used to preseve the referencing relation between values (esp. tvars)
-   which is then used by Weaktid module for GC. Just consider a tvar which has
-   other tvars as its value, with Marshal back/forth, the reference realtion
-   won't exist.
+(* tid = stm_magic * thread_id * local_id, used as pure identification; tvid
+   not only has tid inside, but also keep refrence (for GC) between each
+   other. In such sense, tvid must carefully preserve physical
+   linking/equivelence  property, while tid doesn't.
 *)
-let repr_of_val v = Obj.repr v, Marshal.to_string v [Marshal.Closures]
-and val_of_repr (_,s) = Marshal.from_string s 0
+type tid = int * int * int and tvid = {tid: tid; mutable dirty: tvid list}
 
-(* Phantom type *)
-type 'a tvar = unit -> tid
-
-
-(* Tidtbl is used to define the environment (tvar * value/version bindings)
-   and log (tvar * cur_value/rw_state etc. bindings). We must snapshot the
-   whole environment (value bindings) before any atomic transactions, because
-   tvars read on different points of a time series are actually inconsistent
-   even if every updating is thread safe, besides we won't be able to know
-   which tvars will be visited before the actual performing of each atomic
-   transaction unit. Immutable data structure is used to save storage, otherwise
-   we need a deep-persistent-copy. We use Map to get a immutable env with fast
-   locating of tvar.
+(* We need both Obj and Marshal. Marshal is used to isolate side-effect so that
+   tvar won't change through other means except tvar operation, however it
+   breaks the referencing relation between values, so the former is used to
+   preseve the referencing relation between values (esp. tvars) which is then
+   used by Weaktidtbl module for GC. Just consider a tvar which has other tvars
+   as its value, with Marshal back/forth, the reference realtion won't exist. 
 *)
-module Tidtbl = Map.Make (struct type t = tid let compare = compare end)
+type version = int and value = Obj.t and record = string
 
-type tvar_repr = 
-    { version: version;
-      value: value;
-    }
+let rec_of_var v = Marshal.to_string v [Marshal.Closures]
+let var_of_rec s = Marshal.from_string s 0
+let rec_of_val o = Marshal.to_string (Obj.obj o) [Marshal.Closures]
+let val_of_rec s = Obj.repr (Marshal.from_string s 0)
+let val_of_var v = Obj.repr v
+let var_of_val o = Obj.obj o
 
-(* env = tvar -> tvar_repr bindings *)
+let tvid_eq {tid = tid1} {tid = tid2} = tid1 = tid2
+let tvid_comp {tid = tid1} {tid = tid2} = compare tid1 tid2
+let tvid_hash {tid = tid} = Hashtbl.hash tid
+let is_tvid o = 
+  Obj.tag o = 0 && let o' = Obj.field o 0 in 
+  Obj.tag o' = 0 && Obj.field o' 0 = Obj.repr stm_magic
+let tvid_obj_eq o1 o2 = 
+  is_tvid o1 && is_tvid o2 && Obj.field o1 0 = Obj.field o2 0
+
+let filter_dirty v fold comb l base = fold 
+  (fun tvid ll -> 
+     if Libext.obj_refed_by tvid_obj_eq tvid v then comb tvid ll else ll
+  ) l base
+let filter_subst v iter tbl =
+  let r = ref v in
+  iter (fun tvid -> Libext.obj_subst tvid_obj_eq (tvid,tvid) r) tbl;
+  !r
+
+
+(* Tidtbl is used to define the environment (tid * value/version bindings) and
+   log (tid * cur_value/rw_state etc. bindings). We must snapshot the whole
+   environment (value bindings) before any atomic transactions, because tvars
+   read on different points of a time series are actually inconsistent even if
+   every updating is thread safe, besides we won't be able to know which tvars
+   will be visited before the actual performing of each atomic transaction
+   unit. Immutable data structure is used to save storage, otherwise we need a
+   deep-persistent-copy. We use Map to get a immutable env.
+*)
+module Tidtbl = Map.Make 
+  (struct type t = tid let compare = compare end)
+
+module Tvidtbl = Map.Make
+  (struct type t = tvid let compare = tvid_comp end)
+
+module Weaktidtbl = Weak.Make 
+  (struct type t = tvid let equal = tvid_eq let hash = tvid_hash end)
+
+module Thrtbl = Map.Make 
+  (struct type t = int let compare = compare end)
+
+(* env = tid -> tvar_repr bindings *)
 type env = tvar_repr Tidtbl.t
+and tvar_repr = { version: version; record: record }
 
 (* In a transaction log, we only care whether a tvar's first operation is read
    or write (useful for wait operation), and its current written value if being
    overwritten (useful for consequent read and commit). 
-   A tvar never been accessed during the transaction should appear in the log 
+   log = tvid -> log_item bindings 
 *)
-type log_item =
+type log = log_item Tvidtbl.t
+and log_item =
    { pre_version: version option; (* None = first op is write *)
-     new_value: value option (* None = no write step, only read *)
-    }
-
-(* log = tvar -> log_item bindings *)
-type log = log_item Tidtbl.t
-
-(* Thrtbl is used to store thread local information, some of the design is
-   esp. for the implementation of nested atom *)
-module Thrtbl = Map.Make (struct type t = int let compare = compare end)
+     new_value: value option  (* None = no write step, only read *)
+   }
 
 (* Thr_info is global, immutable and locks-depending, whereas different threads
    can work on its own thr_state independently and sequentially. We are safe to
-   make these thread-local variables mutable and lock-free 
-*)
-type thr_info =
+   make these thread-local variables mutable and lock-free.
+   thr = thread_id -> thread_info bindings *)
+type thr = thr_info Thrtbl.t
+and thr_info =
     { channel: unit Event.channel;
       wait_tid : tid list ;
       state: thr_state
@@ -157,22 +187,25 @@ and thr_state =
       mutable layer: int (* For nested atom *)
     }
 
-(* thr = thread_id -> thread_info bindings *)
-type thr = thr_info Thrtbl.t
-
-
-(* Global variables, should be always protected *)
+(* Global variables information, should always be protected *)
 let global_env = ref Tidtbl.empty
-  (* let global_weaktid = Weaktid.create 200 *)
+
+(* Global thread information *)
 let global_thr = ref Thrtbl.empty
 
+(* Global weak tid information, should always be proteced *)
+let global_weaktid = Weaktidtbl.create 29
 
-(* Some helper functions *)
+(* Global to_remove list for env *)
+let global_remove = ref []
 
-let cur_thr_id () = Thread.id (Thread.self ())
+
+(* Some helper functions follows *)
+
 
 (* Thread safe: !global_thr is atomic, and no other thread will create thread
    record instead current thread itself *)
+let cur_thr_id () = Thread.id (Thread.self ())
 let cur_thr () = Thrtbl.find (cur_thr_id ()) !global_thr
 
 (* Some of the following operations should be defined inside reader/writer
@@ -180,14 +213,14 @@ let cur_thr () = Thrtbl.find (cur_thr_id ()) !global_thr
    themselves with reader/writer locking mechanics inside. The rule of thumb is
    that only STM primitives that related to global state should be defined with
    locks, helper functions are not.
- *)
+*)
 let new_thr () = 
   let thr_id = cur_thr_id () in
   let thr_info =
     { channel = Event.new_channel ();
       wait_tid = [];
       state = { env = !global_env;
-                log = Tidtbl.empty;
+                log = Tvidtbl.empty;
                 tid_count = 0;
                 layer = 0
               }
@@ -195,172 +228,176 @@ let new_thr () =
   global_thr := Thrtbl.add thr_id thr_info !global_thr;
   thr_info
 
+(* Hopefully atomic *)
+let clean_tid tvid = global_remove := tvid.tid :: !global_remove
 
-let global_rem = ref []
+let clean_env () =
+  let to_remove = !global_remove in global_remove := [];
+  global_env := List.fold_right Tidtbl.remove to_remove !global_env
 
-let remove_unreachable tid = 
-  global_rem := tid :: !global_rem
+(* valid_write take a log and env, produce (tvid list * log_item) list option:
+   None means there are some contradictions between the version on which the
+   log is based and the version of env; Some (r,w)  means no contradictions and
+   r a list of tvid been read and w is a list of tvid * value been written.
+*) 
+let valid_write log env = Tvidtbl.fold
+  (fun tvid item res -> match res, item.pre_version, item.new_value with
+   | None, _, _ -> None
+   | Some (r,w), None, Some value -> Some (r, (tvid, value)::w)
+   | Some _, None, None -> assert false
+   | Some (r,w), Some v, value ->
+       if v <> (Tidtbl.find tvid.tid env).version then None
+       else Some (tvid :: r, match value with None -> w | Some value -> (tvid, value) :: w)
+  ) log (Some ([],[]))
 
-(* valid_write take a log and env, produce log_item list option:  None means
-   there are differences between the version on which the log is based and the
-   version of env; Some l means no such differences and l is a list of
-   modification (tid * value) to commit *) 
-let valid_write log env = Tidtbl.fold
-  (fun tid item res -> match res, item.pre_version with
-   | None, _ -> None
-   | _, Some v when v <> (Tidtbl.find tid env).version -> None
-   | Some l, _ -> 
-       match item.new_value with
-       | None -> res
-       | Some value -> Some ((tid, value) :: l)
-  ) log (Some [])
-
-(* valid_read take a log and env, produce log_item list option:  None means
-   there are differences between the version on which the log is based and the
-   version of env; Some l means no such differences and l is a list of tvar
-   (tid) that have been read *)
-let valid_read log env = Tidtbl.fold
-  (fun tid item res -> match res, item.pre_version with
-   | None, _ | _, None -> res
-   | _, Some v when v <> (Tidtbl.find tid env).version -> None
-   | Some l, Some v -> Some (tid :: l)
-  ) log (Some [])
-
-(* Only log and layer needs saving, env does not change during atom performing,
-   tid_count should keep increasing with every attempting no matter success or
-   fail 
+(* valid_read take a log and env, produce tvid list option: None means there
+   are contradictions between log-based version and the version of env; Some l
+   means no contradictions and l is a list of tvid been read 
 *)
-let save_state st = 
-  {st with log = st.log; layer = st.layer} 
-let restore_state st st_bak =
-  st.log <- st_bak.log; st.layer <- st_bak.layer
+let valid_read log env = Tvidtbl.fold
+  (fun tvid item res -> match res, item.pre_version with
+   | None, _ | _, None -> res
+   | _, Some v when v <> (Tidtbl.find tvid.tid env).version -> None
+   | Some l, Some v -> Some (tvid :: l)
+  ) log (Some [])
+
+(* When saving/restoring state, Only log and layer needs saving, env does not
+   change during atom performing, tid_count should keep increasing with every
+   attempting no matter success or fail. 
+*)
+let save_state st = {st with log = st.log; layer = st.layer} 
+let restore_state st st_bak = st.log <- st_bak.log; st.layer <- st_bak.layer
+
+(* Be sure to reset as soon as possible, otherwise there could be memory leak due
+   to unnecessary residu tvar, such as the mcast example *)
+let reset_state state = state.env <- !global_env; state.log <- Tvidtbl.empty
+let clean_state state = state.env <- Tidtbl.empty; state.log <- Tvidtbl.empty
 
 
 
+(** Transaction semantics *)
 
-(* Transaction semantics *)
+(* Phantom type *)
+type 'a tvar = tvid
 
 type 'a stm = thr_state -> 'a
-
 let return v = fun state -> v
-
 let bind t f = fun state -> f (t state) state
-
 let ( >>= ) = bind
 let ( >> ) s1 s2 = s1 >>= (fun _ -> s2)
 
-
-
-
-
-(* Tvar semantics *)
-
-(* Global operation, locks required *)
+(* Non-transactional declaration of new tvar, ensure to success *)
 let tvar v = 
   let thr_state = 
     try (reader cur_thr ()).state
     (* we are safe to separate test-read and write operations here, as no other
-       threads will create thread record between them instead of the current
-       thread itself *)
+       threads will create the record for the current thread except itself *)
     with Not_found -> (writer new_thr ()).state in
   thr_state.tid_count <- succ thr_state.tid_count;
-  let new_tid = (cur_thr_id (), thr_state.tid_count) in
-  let _ = Gc.finalise (remove_unreachable) new_tid in  
-  let new_tvar = fun () -> new_tid in
-  let new_repr =
-    { version = 0;
-      value = repr_of_val v;
-    } in
-  thr_state.env <- Tidtbl.add new_tid new_repr thr_state.env;
+  let new_tid = (stm_magic, cur_thr_id (), thr_state.tid_count) in
+  let new_repr = {version = 0; record = rec_of_var v} in
   writer 
     (fun () ->
-       global_env := Tidtbl.add new_tid new_repr !global_env
-    ) ();
-  new_tvar
+       let dirty = 
+         filter_dirty v Weaktidtbl.fold (fun x l -> x::l) global_weaktid [] in
+       let new_tvid = {tid = new_tid; dirty = dirty} in
+       let _ = Gc.finalise clean_tid new_tvid in
+       thr_state.env <- Tidtbl.add new_tid new_repr thr_state.env;
+       global_env := Tidtbl.add new_tid new_repr !global_env;
+       Weaktidtbl.add global_weaktid new_tvid;
+       new_tvid
+    ) ()
 
+(* Transactional declaration of new tvar *)
 let new_tvar v = fun state ->
   state.tid_count <- succ state.tid_count;
-  let new_tid = (cur_thr_id (), state.tid_count) in
-  let _ = Gc.finalise (remove_unreachable) new_tid in
-  let new_tvar = fun () -> new_tid in
+  let new_tid = (stm_magic, cur_thr_id (), state.tid_count) in
+  let new_tvid = {tid =new_tid; dirty = []} in
   let new_log_item =
     { pre_version = None;
-      new_value = Some (repr_of_val v)
+      new_value = Some (val_of_var v)
     } in
-  state.log <- Tidtbl.add new_tid new_log_item state.log;
-  new_tvar
+  state.log <- Tvidtbl.add new_tvid new_log_item state.log;
+  new_tvid
 
 let read_tvar tv = fun state -> 
   try 
-    let val_repr = 
-      match (Tidtbl.find (tv ()) state.log).new_value with
-      | None -> (Tidtbl.find (tv ()) state.env).value
-      | Some v -> v in
-    val_of_repr val_repr
+    match (Tvidtbl.find tv state.log).new_value with
+    | None -> var_of_rec (Tidtbl.find tv.tid state.env).record
+    | Some v -> var_of_val v
   with Not_found -> 
-    let tv_repr = Tidtbl.find (tv ()) state.env in
+    let tv_repr = Tidtbl.find tv.tid state.env in
     let new_item = {pre_version = Some tv_repr.version; new_value = None} in
-    state.log <- Tidtbl.add (tv ()) new_item state.log;
-    val_of_repr tv_repr.value
+    state.log <- Tvidtbl.add tv new_item state.log;
+    var_of_rec tv_repr.record
 
 let write_tvar tv v = fun state ->
+  let new_value = Some (val_of_var v) in
   let log_item = 
-    try 
-      { (Tidtbl.find (tv ()) state.log) with new_value = Some (repr_of_val v) }
-    with Not_found -> 
-      { pre_version = None; 
-        new_value = Some (repr_of_val v)
-      } in
-  state.log <- Tidtbl.add (tv ()) log_item state.log
+    try {(Tvidtbl.find tv state.log) with new_value = new_value}
+    with Not_found -> {pre_version = None; new_value = new_value} in
+  state.log <- Tvidtbl.add tv log_item state.log
 
 (* We use synchronized event here in order to be able to leave critical section
    by beginning a continuous waiting. Asynchronized event (Event.poll) won't be
    able to ensure the seamless connection of the leaving and
    beginning. Condition.wait seems natural, but won't be able to allow us to
    customize the locking mechanics as we do with the reader/writer solution.
-
    Global operation, lock required.
 *)
 let wait state  =
-  let e = writer
+  let e = writer 
     (fun () ->
-       let env = !global_env in
-       match valid_read state.log env with
+       match valid_read state.log !global_env with
        | None | Some [] -> Event.always ()
        | Some l -> 
-           let new_thr_info = {(cur_thr ()) with wait_tid = l} in
+           let new_thr_info = 
+             {(cur_thr ()) with wait_tid = List.map (fun x -> x.tid) l} in
            global_thr := Thrtbl.add (cur_thr_id ()) new_thr_info !global_thr;
            Event.receive new_thr_info.channel) () in
   Event.sync e
 
-let commit = writer 
-  (fun log -> 
-     global_env := List.fold_left (fun e x -> if Tidtbl.mem x e then
-                                     Tidtbl.remove x e else e) !global_env !global_rem;
-     global_rem := [];
-     let env = !global_env in
-     let thr = !global_thr in
-     match valid_write log env with
-     | None -> false 
-     | Some [] -> true
-     | Some l -> 
-         let new_env, new_thr = List.fold_left 
-           (fun (old_env,old_thr) (tid, value) ->
-              let version =
-                try succ (Tidtbl.find tid old_env).version
-                with Not_found -> 0 in
-              Tidtbl.add tid {version = version; value = value} old_env, 
-              Thrtbl.fold
-                (fun id item thr -> 
-                   if List.mem tid item.wait_tid then
-                     (Event.sync (Event.send item.channel ()); 
-                      Thrtbl.add id {item with wait_tid = []} thr)
-                   else thr)
-                old_thr old_thr
-           ) (env, thr) l in
-         global_env := new_env; global_thr := new_thr;
-         true
-  ) 
+let commit log v = writer 
+  (fun (log, v) -> 
+     match valid_write log !global_env with
+     | None -> None
+     | Some (r, w) -> 
+         let suspecious_r = List.fold_left 
+           (fun l tvid -> (Weaktidtbl.find global_weaktid tvid).dirty @ l) 
+           r r in
+         let suspecious_w, old_dirty = List.fold_left
+           (fun (sw,od) (tvid,_) ->
+              try sw, ((Weaktidtbl.find global_weaktid tvid).dirty @ od)
+              with Not_found -> 
+                Gc.finalise clean_tid tvid;
+                Weaktidtbl.add global_weaktid tvid; 
+                (tvid::sw, od)) 
+           ([], []) w in
+         let suspecious = suspecious_w @ suspecious_r in
+         List.iter 
+           (fun (tvid, value) ->
+              let dirty = 
+                filter_dirty value List.fold_right (fun x l -> x::l) suspecious [] in
+              (Weaktidtbl.find global_weaktid tvid).dirty <- dirty;
+              (global_env := 
+                 let repr = 
+                   { record = rec_of_val value;
+                     version = 
+                       try (Tidtbl.find tvid.tid !global_env).version + 1
+                       with Not_found -> 0
+                   } in
+                 Tidtbl.add tvid.tid repr !global_env);
+              (global_thr := Thrtbl.fold
+                 (fun id item thr -> 
+                    if List.mem tvid.tid item.wait_tid then
+                      (Event.sync (Event.send item.channel ()); 
+                       Thrtbl.add id {item with wait_tid = []} thr)
+                    else thr)
+                 !global_thr !global_thr)
+           ) w;
+         clean_env ();
+         Some (filter_subst v Weaktidtbl.iter global_weaktid)
+  ) (log, v)
 
 
 exception Abort
@@ -391,38 +428,41 @@ let or_else t1 t2 = fun state ->
       | Retry b1, Retry b2 ->
           (* Mix two logs are unavoidably dirty, fortunately we only cares
              about the reading records *)
-          state.log <- Tidtbl.fold 
-            (fun tid log_item log -> 
+          state.log <- Tvidtbl.fold 
+            (fun tvid log_item log -> 
                match log_item.pre_version with
                | None -> log
                | Some v -> 
-                   try (match (Tidtbl.find tid log).pre_version with
+                   try (match (Tvidtbl.find tvid log).pre_version with
                         | Some _ -> log
                         | None -> raise Not_found)
-                   with Not_found -> Tidtbl.add tid log_item log)
+                   with Not_found -> Tvidtbl.add tvid log_item log)
             state_bak_1.log state.log;
           raise (Retry (b1 && b2))
       | _, _ -> assert false
 
 let rec atom_once t =
-  let state = 
-    try
-      let st = (cur_thr ()).state in
-      if st.layer = 0 then (st.env <- !global_env; st.log <- Tidtbl.empty); 
-      st
-    with Not_found -> (writer new_thr ()).state in
+  let state = try
+    let st = (cur_thr ()).state in
+    if st.layer = 0 then reset_state st;
+    st
+  with Not_found -> (writer new_thr ()).state in
   (* Really enter by succ layer *)
   state.layer <- succ state.layer;
-  try 
+  try
     let v = t state in
-    (* Quick to upper layer *)
-    state.layer <- pred state.layer; 
-    if state.layer > 0 || commit state.log then Some v else None
+    (* Quit to upper layer *)
+    state.layer <- pred state.layer;
+    if state.layer > 0 then Some v
+    else
+      let log = state.log in
+      let _ = clean_state state in
+      commit log v
   with e ->
     state.layer <- pred state.layer;
     match state.layer, e with 
     | 0, Retry b -> if b then wait state; atom_once t 
-    | 0, Abort -> None
+    | 0, Abort -> clean_state state; None
     | _, _ -> raise e
 
 let rec atom t = match atom_once t with None -> atom t | Some v -> v

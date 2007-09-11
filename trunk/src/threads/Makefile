@@ -4,6 +4,10 @@ INCLUDES= -I +threads -I ..
 
 BACKEND = threads
 
+AUXMOD = libext
+AUXMODBYT = $(AUXMOD:%=%.cmo)
+AUXMODNAT = $(AUXMOD:%=%.cmx)
+
 COMMONMOD = thread mutex condition event
 COMMONMODNAT =  $(COMMONMOD:%=%.cmx)
 COMMONMODNATA = $(COMMONMOD:%=%.o)
@@ -33,9 +37,9 @@ $(COMMONMODNATA):$(OCAMLSTDLIBPATH)/threads/threads.a
 	$(AR) -x $<
 
 $(LIBBYT): $(EXTRAMODBYT)
-	$(OCAMLC) -a -o $@ threads.cma $+
+	$(OCAMLC) -a -o $@ threads.cma $(AUXMODBYT) $+
 $(LIBNAT): $(COMMONMODNAT) $(COMMONMODNATA) $(EXTRAMODNAT) 
-	$(OCAMLOPT) -a -o $@ $(COMMONMODNAT) $(EXTRAMODNAT) -cclib -lthreadsnat -cclib -lunix -cclib -lpthread
+	$(OCAMLOPT) -a -o $@ $(COMMONMODNAT) $(AUXMODNAT) $(EXTRAMODNAT) -cclib -lthreadsnat -cclib -lunix -cclib -lpthread
 
 .PHONY: all install clean uninstall
 

@@ -4,6 +4,9 @@ INCLUDES=-I +vmthreads -I ..
 
 BACKEND = vmthreads
 
+AUXMOD = libext
+AUXMODBYT = $(AUXMOD:%=%.cmo)
+
 COMMONMOD = cothread stm
 COMMONMODSRC = $(COMMONMOD:%=%.ml)
 COMMONMODBYT = $(COMMONMOD:%=%.cmo)
@@ -19,7 +22,7 @@ INSTALLFILES = $(COMMONMODINTFCOM) $(LIBBYT)
 
 
 $(LIBBYT): $(COMMONMODBYT)
-	$(OCAMLC) -a -o $@ threads.cma $+
+	$(OCAMLC) -a -o $@ threads.cma $(AUXMODBYT) $+
 
 $(COMMONMODINTF):%:../%
 	@if [ ! -e $@ -a -e ../$@ ]; then ln -s $< .; fi
