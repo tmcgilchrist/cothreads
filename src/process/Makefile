@@ -4,7 +4,7 @@ INCLUDES = -I ..
 
 BACKEND = process
 
-AUXMOD = libext yor
+AUXMOD = libext libextunix
 AUXMODBYT = $(AUXMOD:%=%.cmo)
 AUXMODNAT = $(AUXMOD:%=%.cmx)
 LOCALMOD = coordinator

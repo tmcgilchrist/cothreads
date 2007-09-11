@@ -2,7 +2,7 @@
 INSTALLLIBDIR = $(OCAMLSTDLIBPATH)
 
 
-# Layout of urrent project
+# Layout of current project
 SOURCEDIR = src
 DOCDIR = doc
 EXAMPLEDIR = example

@@ -16,8 +16,8 @@
 (*                                                                     *)
 (***********************************************************************)
 
-(** A user-space STM library for threads, process (TODO) and networked programs
-    (TODO)
+(** A user-space STM library for vmthreads, system threads, process and network
+    programs(TODO).
 *)
 
 

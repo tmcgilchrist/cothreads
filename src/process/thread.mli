@@ -11,7 +11,8 @@
 (*                                                                     *)
 (***********************************************************************)
 
-(** Thread inferface source-leve compatible with vmthread/systhread *)
+(** Thread inferface, the version compatible with Thread module of standard
+    threads library from OCaml distribution *)
 
 type t
 (** The type of thread handles. *)

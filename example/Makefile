@@ -1,64 +1,39 @@
 include ../Makefile.template
 
+IFRAY = $(if $(findstring ray,$@), $(if $(findstring opt,$@),ray.cmx,ray.cmo))
+VMPARAM = -I +vmthreads $(IFRAY) cothreads.cma 
+NATHPARAM = -I +threads $(IFRAY) unix.cma cothreads.cma
+NATHOPTPARAM = $(NATHPARAM:%.cma=%.cmxa)
+PROCPARAM = -I +process $(IFRAY) unix.cma cothreads.cma
+PROCOPTPARAM = $(PROCPARAM:%.cma=%.cmxa)
 
 %.vmth: %.cmo
-	$(OCAMLC) -I +vmthreads -o $@ $(if $(findstring ray, $@), ray.cmo) cothreads.cma $^
+	$(OCAMLC) -o $@ $(VMPARAM) $< 
 
 %.nath: %.cmo
-	$(OCAMLC) -I +threads -o $@ $(if $(findstring ray,$@), ray.cmo) unix.cma cothreads.cma $<
+	$(OCAMLC) -o $@ $(NATHPARAM) $<
 
 %.nath.opt: %.cmx
-	$(OCAMLOPT) -I +threads -o $@ $(if $(findstring ray,$@), ray.cmx) unix.cmxa cothreads.cmxa $<
+	$(OCAMLOPT) -o $@ $(NATHOPTPARAM) $<
 
 %.proc: %.cmo
-	$(OCAMLC) -I +process -o $@ $(if $(findstring ray,$@), ray.cmo) unix.cma cothreads.cma $<
+	$(OCAMLC) -o $@ $(PROCPARAM)  $<
 
 %.proc.opt: %.cmx
-	$(OCAMLOPT) -I +process -o $@ $(if $(findstring ray,$@), ray.cmx) unix.cmxa cothreads.cmxa $<
-
-%.netw: %.cmo
-	$(OCAMLC) -I +networker -o $@ $(if $(findstring ray,$@), ray.cmo) unix.cma cothreads.cma $<
-
-%.netw.opt: %.cmx
-	$(OCAMLOPT) -I +networker -o $@ $(if $(findstring ray,$@), ray.cmx) unix.cmxa cothreads.cmxa $<
-
-
-
-# Since prod_consum make use of some aux libraries we developed during the implementation of 
-# the process backend. We handle it specially. We should reimplement it with events. This test
-# also shows how to compile a source once, but link with different back-ends. (we call it
-# "Object-level independence" and "linking-time semantics", comapred with "Source-level 
-#  independence" and "compile-time semantics".
-
-AUXMOD = libext coordinator
-AUXMODINTFCOM = $(AUXMOD:%=%.cmi)
-AUXMODBYT = $(AUXMOD:%=%.cmo)
-AUXMODNAT = $(AUXMOD:%=%.cmx)
-AUXMODNATA = $(AUXMOD:%=%.o)
-AUXFILES = $(AUXMODINTFCOM) $(AUXMODBYT) $(AUXMODNAT) $(AUXMODNATA)
-
-$(AUXFILES):
-	@if [ ! -e $@ -a -e ../src/$@ ]; then ln -s ../src/$@ .; fi
-	@if [ ! -e $@ -a -e ../src/process/$@ ]; then ln -s ../src/process/$@ .; fi
-
-prod_consum.cmo: $(AUXFILES) prod_consum.ml
-	$(OCAMLC) -c prod_consum.ml
-prod_consum.cmx: $(AUXFILES) prod_consum.ml
-	$(OCAMLOPT) -c prod_consum.ml
-prod_consum.nath: prod_consum.cmo
-	$(OCAMLC) -I +threads -o $@ unix.cma  $(AUXMODBYT) cothreads.cma $<
-prod_consum.proc: prod_consum.cmo
-	$(OCAMLC) -I +process  -o $@ unix.cma  cothreads.cma $<
-prod_consum.nath.opt: prod_consum.cmx
-	$(OCAMLOPT) -I +threads -o $@ unix.cmxa $(AUXMODNAT) cothreads.cmxa $<
-prod_consum.proc.opt: prod_consum.cmx
-	$(OCAMLOPT) -I +process -o $@ unix.cmxa cothreads.cmxa $<
+	$(OCAMLOPT) -o $@ $(PROCOPTPARAM)  $<
 
 ALLTEST = coth evt lock ray_col ray_nocol test mvar merge mcast phil santa
-EXTRATEST = prod_consum
 
-all: $(ALLTEST:%=%.vmth) $(ALLTEST:%=%.nath) $(ALLTEST:%=%.nath.opt) $(ALLTEST:%=%.proc) $(ALLTEST:%=%.proc.opt) $(EXTRATEST:%=%.nath) $(EXTRATEST:%=%.nath.opt)	$(EXTRATEST:%=%.proc) $(EXTRATEST:%=%.proc.opt)
+all: $(ALLTEST:%=%.vmth) $(ALLTEST:%=%.nath) $(ALLTEST:%=%.nath.opt) $(ALLTEST:%=%.proc) $(ALLTEST:%=%.proc.opt) 
 
 clean: ocamlclean
 	$(RM) *.vmth *.nath *.proc *.netw *.opt *.pgm
 
+
+# TODO:
+# NETWPARAM = -I +networker $(IFRAY) unix.cma cothreads.cma
+# NETWOPTPARAM = $(NETWOPTPARAM:%.cma=%.cmxa)
+# %.netw: %.cmo
+# 	$(OCAMLC) -o $@ $(NETWPARAM) $<
+# %.netw.opt: %.cmx
+# 	$(OCAMLOPT) -o $@ $(NETWOPTPARAM) $<

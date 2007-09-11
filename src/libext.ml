@@ -1,13 +1,3 @@
-open Unix
-
-let debug_level = ref max_int
-
-let debug ?(level = 0) f = 
-  if level <= !debug_level then 
-    (Printf.printf "(at %f: ) " (gettimeofday ());
-     f (); 
-     flush Pervasives.stdout)
-
 exception Break
 exception NoImplementationYet
 let noimplementation x = raise NoImplementationYet
@@ -18,49 +8,14 @@ let list_find_split =
     | h :: t -> if test h then (acc, h, t) else find_rec test (h::acc) t in
   fun test l -> find_rec test [] l
 
+let rec list_find_app f = function
+  | [] -> None
+  | h::t -> match f h with Some _ as v -> v | None -> list_find_app f t
+
 let bit_chop_to_n n x =
   let capability = 1 lsl n - 1 in
   x land capability
 
-(* Atomically write OCaml value to file_descr for both block/nonblock mode *) 
-let marshal_write =
-  let rec write_rec fd s ofs len =
-    let len' = 
-      try write fd s ofs len 
-      with Unix_error ((EAGAIN|EWOULDBLOCK),_,_) when ofs > 0 -> 0 in
-    match len' with
-    | 0 -> ignore (select [] [fd] [] (-1.)); write_rec fd s ofs len
-    | _ when len' < len -> write_rec fd s (ofs + len') (len - len')
-    | _ -> () in
-  fun v fd ->
-    let str = Marshal.to_string v [Marshal.Closures] in
-    write_rec fd str 0 (String.length str)
-
-(* Atomically read OCaml value from file_descr for both block/nonblock mode *) 
-let marshal_read fd =
-  let bsize = Marshal.header_size + 128 in
-  let buf = String.create bsize in
-  let rec read_rec fd buf ofs len =
-    let len' =
-      try Some (read fd buf ofs len) with 
-      | Unix_error (EAGAIN,_,_) 
-      | Unix_error (EWOULDBLOCK,_,_) when ofs > 0 -> None
-      | e -> raise e in
-    match len' with
-    | Some 0 -> raise End_of_file
-    | Some l when l = len -> ()
-    | Some l -> read_rec fd buf (ofs + l) (len -l)
-    | None -> ignore (select [fd] [] [] (-1.)); read_rec fd buf ofs len in
-  read_rec fd buf 0 Marshal.header_size;
-  let data_size = Marshal.data_size buf 0 in
-  let total_size = Marshal.header_size + data_size in
-  let buf = 
-    if total_size <= String.length buf then buf else
-      let ext_buf = String.create total_size in
-      String.blit buf 0 ext_buf 0 Marshal.header_size;
-      ext_buf in
-  read_rec fd buf Marshal.header_size data_size;
-  Marshal.from_string buf 0
 
 module Map_Make (Ord:Map.OrderedType) : sig
   include Map.S
@@ -105,3 +60,57 @@ end with type key = Ord.t = struct
       with Not_found -> add k v tbl in
     fold add_item t1 t2
 end
+
+open Obj
+
+let obj_fields_from pos obj = 
+  let rec walk acc = function
+    | n when n >= pos -> walk (field obj n :: acc) (n - 1)
+    | _ -> acc in
+  walk [] (size obj - 1)
+
+(* all prefix, depth first visit *)
+
+let obj_find prop v =
+  let obj = repr v in
+  let already_seen = ref [] in
+  let rec find_aux o = 
+    if List.memq o !already_seen then None
+    else if prop o then Some o 
+    else
+      (already_seen := o :: !already_seen;
+       if tag o < no_scan_tag then 
+         list_find_app find_aux (obj_fields_from 0 o)
+       else None
+      ) in
+  find_aux obj
+
+let obj_iter f v =
+  let obj = repr v in
+  let already_seen = ref [] in
+  let rec iter_aux o =
+    if not (List.memq o !already_seen) then
+      (f o;
+       already_seen := o :: !already_seen;
+       if tag o < no_scan_tag then List.iter iter_aux (obj_fields_from 0 o)) in
+  iter_aux obj
+
+let obj_refed_by eq a b = 
+  match obj_find (eq (repr a)) b with None -> false | Some _ -> true
+
+(* Distructive substitution, note that rb is reference type because otherwise
+   we have no way to substitute the whole expression, if it satify the
+   condition *)
+let obj_subst eq ((a: 'a), (a': 'a)) rb =
+  let oa = repr a and ob = repr (!rb) and oa' = repr a' in
+  let already_seen = ref [] in
+  let rec subst_aux o =
+    if not (List.memq o !already_seen) then 
+      (already_seen := o :: !already_seen;
+       if tag o < no_scan_tag then
+         for i = 0 to size o do
+           let oi = field o i in
+           let equal = try eq oi oa with Invalid_argument _ -> oi == oa in
+           if equal then set_field o i oa' else subst_aux oi
+         done) in
+  if eq ob oa  then rb := obj oa' else subst_aux ob

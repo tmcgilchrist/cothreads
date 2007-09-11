@@ -15,7 +15,7 @@ let simple () =
     | None -> Printf.printf "%d fail\n" x; flush stdout; thread_fun x
     | Some _ -> Printf.printf "%d succ\n" x; flush stdout  in
   let thr_array = 
-    Array.init 500 (fun x -> Thread.create thread_fun (x+1)) in
+    Array.init 300 (fun x -> Thread.create thread_fun (x+1)) in
   Array.iter Thread.join thr_array;
   Printf.printf "Final result: %d\n" (atom (read_tvar tv)); flush_all ()
 

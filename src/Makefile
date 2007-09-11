@@ -2,7 +2,7 @@ include ../Makefile.template
 
 BACKENDS = threads vmthreads process
 
-AUXMOD = yor libext
+AUXMOD = libext libextunix
 AUXMODBYT = $(AUXMOD:%=%.cmo)
 AUXMODNAT = $(AUXMOD:%=%.cmx)
 

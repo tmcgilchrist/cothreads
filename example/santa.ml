@@ -28,7 +28,7 @@ let new_group n = atom
        new_tvar (n, g1, g2) >>= fun tv ->
          return {gp_num = n; gp_left = tv})
 
-let join_group {gp_left = left} = atom 
+let join_group {gp_left = left} = atom
   (read_tvar left >>= fun (n_left, g1, g2) -> 
      if n_left > 0 then 
        write_tvar left (n_left - 1, g1, g2) >> return (g1, g2)
@@ -42,11 +42,10 @@ let await_group {gp_num = num; gp_left = left} =
           write_tvar left (num, new_g1, new_g2) >> return (g1, g2)
     else retry
 
-
 let rec helper gp id task =
   let in_gate, out_gate = join_group gp in
   use_gate in_gate; task id; flush stdout; use_gate out_gate;
-  Thread.delay (Random.float 1.0);
+  Thread.delay (Random.float 0.5);
   helper gp id task
 
 let run task (in_gt, out_gt) =  
