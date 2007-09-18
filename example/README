@@ -1,0 +1,70 @@
+= README = 
+
+
+== BUILD ==
+
+Just ''make all'' after you've got coThreads installed on your system.
+
+Type ''make clean'' to remove all imtermediate and final building results.
+
+
+== LIST ==
+
+* coth (use: Thread (or Cothread), Mutex)
+  Simple test of mutex. A set of threads tries to grab a single mutex and
+  release it for random times 
+
+* evt (use: Thread (or Cothread), Event)
+  Simple test of event. Most examples are directly from the OCaml OReilly
+  book. The execution won't exist, this is intentional.
+
+* lock (use: Thread (or Cothread), Mutex)
+  Simple test of mutex. A set of threads try to grab two mutex. Each thread
+  first must grab the first mutex before the second mutex, then release the
+  second mutex and the first one.
+
+* mcast (use: Thread (or Cothread), Stm)
+  STM example from [1], contributed by Yoriyuki Yamagata
+
+* merge (use: Thread (or Cothread), Stm)
+  STM example from [1], contributed by Yoriyuki Yamagata
+
+* mvar (use: Thread (or Cothread), Stm)
+  STM example from [1], contributed by Yoriyuki Yamagata
+
+* phil (use: Thread (or Cothread), Stm)
+  Classical philosophers dinning problem written in STM. Launch it with 
+  [./phil n], where n is the number of philosophers and chopsticks.
+
+* ray_col, ray_nocol (use: Cothread, Event)
+  Replanted versions of Jon Harrop's ray tracer [3]. ray.ml is the module
+  containing common computation functions, ray_xxx.ml are parallel engines.
+  In ray_nocol.ml, the workers don't send the results back to master, instead
+  they write them directly to the output file; in ray_col.ml, the workers send
+  results back to the master, and the master write them to the output file. 
+  Launch it with [./ray_xxx level size degree outputfile], where [level] and
+  [size] are about the quality of output image, and [degree] is the parallel
+  degree which should equal or greater than the cores or cpus of your machine
+  if you'd like to get the most speedup. Or you may just lanch it with
+  [./ray_xxx] which takes the default setting [./ray_xxx 9 512 2 ray_xxx.pgm]
+
+* santa (use: Thread (or Cothread), Stm)
+  The Santa Clause problem documented in [2]. The haskell version is attached
+  as comment at the end of the file.
+
+* sing (use: Thread (or Cothread), Stm)
+  Simple test of Stm. Two threads constantly update a single tvar.
+
+* test (use: Thread (or Cothread), Stm)
+  Simple test of Stm to calculate the sum of [0..n-1] with n threads. The i_th
+  thread is responsible for adding i to the sum. Its action is not allowed to
+  take place until the current sum exceed sum (i/10).
+
+* The Makefile itself is an example. It shows that how you can build your
+  applications against a set of execution engines with just a few lines of
+  pattern rules.
+
+
+[1] http://research.microsoft.com/users/simonpj/papers/stm/index.htm#composble
+[2] https://research.microsoft.com/users/simonpj/papers/stm/index.htm#beautiful
+[3] http://www.ffconsultancy.com/languages/ray_tracer/index.html

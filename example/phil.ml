@@ -1,11 +1,8 @@
-(* Classical philosopher dinning problem written in STM. Just a plain
-   simulation, deadlock is possible because no preventing mechanics has been
-   used. Launch it with [./phil n], where n is the number of philosophers and
-   chopsticks.
+(* Classical philosopher dinning problem written in STM. Launch it with [./phil
+   n], where n is the number of philosophers and chopsticks.
 *)
-module Thread=Cothread
+module Thread=Cothread (* Or use Thread directly *)
 open Stm
-
 
 (* Number of philosophers and chopsticks, the degree *)
 let n = 
@@ -18,12 +15,9 @@ let chopstick = Array.init n (fun _ -> tvar true)
 
 let left x = x and right x = (x + 1) mod n
 
-(* Helper stm function *)
 let check b = if b then return () else retry
 
-
 (* Actions: think, eat, takeup, putdown*)
-
 let think x = 
   Printf.printf "Phil %d begins his THINKING ...\n" x; flush stdout;
   Thread.delay (Random.float 0.1)
@@ -33,33 +27,28 @@ let eat x =
   Thread.delay (Random.float 0.02);
   Printf.printf "Phil %d now finish EAT <----- \n" x; flush stdout
 
-let takeup id side =
-  let cs_id, cs_name = 
-    match side with 
-    | `Left -> left id, "_left_" 
-    | `Right -> right id, "_right_" in
-  atom (read_tvar chopstick.(cs_id) >>= check 
-        >> write_tvar chopstick.(cs_id) false);
-  Printf.printf "Phil %d take up chopstick %d on his %s\n" id cs_id cs_name;
-  flush stdout
+let chop_act x s l r =
+  Printf.printf "Phil %d %s chopstick %d and %d\n" x s l r
+
+let takeup id =
+  read_tvar chopstick.(id) >>= check >> write_tvar chopstick.(id) false
 
 let putdown id =
-    atom (write_tvar chopstick.(left id) true 
-          >> write_tvar chopstick.(right id) true)
-
+  write_tvar chopstick.(id) true 
 
 (* Philosopher thread function *)
 let phil x =
+  let l,r = (left x, right x) in
   let rec run () = 
     think x;
-    takeup x `Left;
-    takeup x `Right;
+    atom (takeup l >> takeup r);
+    chop_act x "take up" l r;
     eat x;
-    putdown x;
+    atom (putdown l >> putdown r);
+    chop_act x "put down" l r;
     run () in
   Random.self_init ();
   run ()
-
 
 let main () =
   let phils = Array.init n (Thread.create phil) in
