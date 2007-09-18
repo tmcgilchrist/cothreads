@@ -20,11 +20,15 @@ let work_dir =
   (try mkdir name dir_perm with Unix_error (EEXIST,_,_) -> ());
   name
 
+(* word_size is used to generate file offset, fresh id number and fresh
+   name. For now, it's restricted to at most 32 bit on any platform, which
+   should be sufficient for its purpose *)
+let word_size = min Sys.word_size 32
+
 (* fresh_number fresh_name ensure that there won't exist number/name
-   confliction between running processes.
-*)
+   confliction between running processes. *)
 let fresh_number =
-  let usable_size = Sys.word_size -2 in
+  let usable_size = word_size -2 in
   let bits_of_id = 16 in (* Should be sufficient in most OS *)
   let bits_of_num = usable_size - bits_of_id in
   let counter = ref 0 in
@@ -38,7 +42,7 @@ let fresh_number =
 
 let fresh_name prefix =
   let num = fresh_number () in
-  let file_name = Printf.sprintf "%s%0*X" prefix (Sys.word_size/4) num in
+  let file_name = Printf.sprintf "%s%0*X" prefix (word_size/4) num in
   Filename.concat work_dir file_name
 
 let remove_exists name = try unlink name with Unix_error (ENOENT,_,_) -> ()
