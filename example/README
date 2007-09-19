@@ -3,7 +3,12 @@
 
 == BUILD ==
 
-Just ''make all'' after you've got coThreads installed on your system.
+Just ''make all'' after you've got coThreads installed on your system. 
+
+In case you want to play with the examples before really installing coThreads
+on your system, you should first build coThreads in the ''src'' directory as
+usual, then go the example directory and pass the building directory as $LOCAL
+variable to make, e.g. ''make all LOCAL=../src''.
 
 Type ''make clean'' to remove all imtermediate and final building results.
 
@@ -62,8 +67,11 @@ Type ''make clean'' to remove all imtermediate and final building results.
 
 * The Makefile itself is an example. It shows that how you can build your
   applications against a set of execution engines with just a few lines of
-  pattern rules.
-
+  pattern rules. Note that we make use of the Cothread module for
+  ''object-level compatability'' instead of the standard Thread module, though
+  in most case you can switch it back, but then the Makefile will be a bit more
+  complicated, as you have to compile a different version of object files for
+  each of the engines.
 
 [1] http://research.microsoft.com/users/simonpj/papers/stm/index.htm#composble
 [2] https://research.microsoft.com/users/simonpj/papers/stm/index.htm#beautiful
